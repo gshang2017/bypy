@@ -26,7 +26,28 @@ def main(args):
                              os.path.basename(header)))
         conf += ' -webp -webengine-icu'
         # https://chromium-review.googlesource.com/c/v8/v8/+/2136489
-        apply_patch('qt-webengine-icu67.patch')
+        ##apply_patch('qt-webengine-icu67.patch'),
+        apply_patch('qt-webengine/qt-webengine-icu67.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-mallinfo.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-siginfo_t.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-pread-pwrite.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-fpstate.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-sysreg-for__WORDSIZE.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-stackstart.patch'),
+        apply_patch('qt-webengine/qt-webengine-nasm.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-hacks.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-resolve.patch'),
+        apply_patch('qt-webengine/qt-webengine-yasm-nls.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-pvalloc.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-execinfo.patch'),
+        apply_patch('qt-webengine/qt-webengine-sandbox-sched_getparam.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-thread-stacksize.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-off_t.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-dispatch_to_musl.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-sandbox.patch'),
+        #apply_patch('qt-webengine/qt-webengine-remove-glibc-check.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-elf-arm.patch'),
+        apply_patch('qt-webengine/qt-webengine-musl-crashpad.patch') 
 
     if iswindows:
         # broken test for 64-bit ness needs to be disabled

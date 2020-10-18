@@ -17,8 +17,8 @@ from .constants import base_dir
 from .utils import call, print_cmd, single_instance
 
 DEFAULT_BASE_IMAGE = (
-    'https://partner-images.canonical.com/core/'
-    'xenial/current/ubuntu-xenial-core-cloudimg-{}-root.tar.gz'
+    'http://dl-cdn.alpinelinux.org/alpine/'
+    'v3.12/releases/x86_64/alpine-minirootfs-3.12.0-x86_64.tar.gz'
 )
 
 arch = '64'
@@ -122,47 +122,53 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
     call('mkfs.ext4', img_store_path)
     mount_image()
     call('sudo tar -C "{}" -xpf "{}"'.format(img_path, archive), echo=False)
-    if os.getegid() != 100:
-        chroot('groupadd -f -g {} {}'.format(os.getegid(), 'crusers'))
-    chroot(
-        'useradd --home-dir=/home/{user} --create-home'
-        ' --uid={uid} --gid={gid} {user}'.format(
-            user=user, uid=os.geteuid(), gid=os.getegid())
-    )
+    ##if os.getegid() != 100:
+    ##    chroot('groupadd -f -g {} {}'.format(os.getegid(), 'crusers'))
+    ##chroot(
+    ##    'useradd --home-dir=/home/{user} --create-home'
+    ##    ' --uid={uid} --gid={gid} {user}'.format(
+    ##        user=user, uid=os.geteuid(), gid=os.getegid())
+    ##)    
     # Prevent services from starting
-    write_in_chroot('/usr/sbin/policy-rc.d', '#!/bin/sh\nexit 101')
-    chroot('chmod +x /usr/sbin/policy-rc.d')
+    ##write_in_chroot('/usr/sbin/policy-rc.d', '#!/bin/sh\nexit 101')
+    ##chroot('chmod +x /usr/sbin/policy-rc.d')
     # prevent upstart scripts from running during install/update
-    chroot('dpkg-divert --local --rename --add /sbin/initctl')
-    chroot('cp -a /usr/sbin/policy-rc.d /sbin/initctl')
-    chroot('''sed -i 's/^exit.*/exit 0/' /sbin/initctl''')
+    ##chroot('dpkg-divert --local --rename --add /sbin/initctl')
+    ##chroot('cp -a /usr/sbin/policy-rc.d /sbin/initctl')
+    ##chroot('''sed -i 's/^exit.*/exit 0/' /sbin/initctl''')
     # remove apt-cache translations for fast "apt-get update"
-    write_in_chroot(
-        '/etc/apt/apt.conf.d/chroot-no-languages',
-        'Acquire::Languages "none";'
-    )
+    ##write_in_chroot(
+    ##    '/etc/apt/apt.conf.d/chroot-no-languages',
+    ##    'Acquire::Languages "none";'
+    ##)
     deps = conf['deps']
     if isinstance(deps, (list, tuple)):
         deps = ' '.join(deps)
-    deps_cmd = 'apt-get install -y ' + deps
-
+    ##deps_cmd = 'apt-get install -y ' + deps
+    deps_cmd = 'apk add ' + deps
     for cmd in [
         # Basic build environment
-        'apt-get update',
-        'apt-get install -y build-essential cmake software-properties-common'
-        ' nasm chrpath zsh git uuid-dev libmount-dev'
-        ' dh-autoreconf',
-        'add-apt-repository ppa:deadsnakes/ppa -y',
-        'apt-get update',
-        'apt-get install -y python3.7',
+        'apk update',
+        'apk add shadow',
+        'apk add build-base zsh perl cmake autoconf autoconf-archive automake git curl xz python3 linux-headers nasm libidn-dev libxml2-dev libtool freetype-dev fontconfig-dev meson  gettext-dev dbus-glib-dev ttf-dejavu',
         'curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py',
-        'python3.7 get-pip.py',
-        'python3.7 -m pip install ninja',
-        'python3.7 -m pip install meson',
+        'python3.8 get-pip.py',
+        'python3.8 -m pip install ninja',
+        ##'apt-get update',
+        ##'apt-get install -y build-essential cmake software-properties-common'
+        ##' nasm chrpath zsh git uuid-dev libmount-dev'
+        ##' dh-autoreconf',
+        ##'add-apt-repository ppa:deadsnakes/ppa -y',
+        ##'apt-get update',
+        ##'apt-get install -y python3.7',
+        ##'curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py',
+        ##'python3.7 get-pip.py',
+        ##'python3.7 -m pip install ninja',
+        ##'python3.7 -m pip install meson',
         deps_cmd,
         # Cleanup
-        'apt-get clean',
-        'chsh -s /bin/zsh ' + user,
+        ##'apt-get clean',
+        ##'chsh -s /bin/zsh ' + user,
     ]:
         chroot(cmd)
 
@@ -244,7 +250,8 @@ def run(args):
             open(os.path.join(tdir, '.zshrc'), 'wb').close()
         try:
             mount_all(tdir)
-            cmd = ['python3.7', '/bypy', 'main'] + args
+            ##cmd = ['python3.7', '/bypy', 'main'] + args
+            cmd = ['python3.8', '/bypy', 'main'] + args
             os.environ.pop('LANG', None)
             for k in tuple(os.environ):
                 if k.startswith('LC') or k.startswith('XAUTH'):

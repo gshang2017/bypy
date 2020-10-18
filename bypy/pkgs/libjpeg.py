@@ -4,11 +4,16 @@
 
 import os
 
-from bypy.constants import PREFIX, is64bit, iswindows, ismacos
+from bypy.constants import PREFIX, is64bit, iswindows, ismacos, islinux
 from bypy.utils import cmake_build, replace_in_file, windows_cmake_build
 
 
 def main(args):
+    if islinux:
+        replace_in_file(
+            'cmakescripts/GNUInstallDirs.cmake',
+            'set(CMAKE_INSTALL_DEFAULT_LIBDIR "lib64")',
+            'set(CMAKE_INSTALL_DEFAULT_LIBDIR "lib")')
     if not iswindows:
         kw = {
             'WITH_JPEG8': '1',

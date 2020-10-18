@@ -4,7 +4,7 @@
 
 import os
 from bypy.constants import LIBDIR, PREFIX
-from bypy.utils import meson_build, ModifiedEnv
+from bypy.utils import meson_build, ModifiedEnv, apply_patch
 
 
 def main(args):
@@ -14,6 +14,8 @@ def main(args):
     ):
         os.makedirs(
             os.path.join(f'{PREFIX}/lib/dbus-1.0/include'), exist_ok=True)
+        #ggettext.c:(.text+0x5db): undefined reference to `libintl_dngettext'
+        apply_patch('glib/glib-musl-libintl.patch')
         meson_build(
             force_posix_threads='true', internal_pcre='true', gtk_doc='false',
             man='false', selinux='disabled', iconv='external')

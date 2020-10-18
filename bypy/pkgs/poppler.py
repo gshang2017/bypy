@@ -18,7 +18,8 @@ def main(args):
                       ENABLE_LIBCURL='OFF',
                       BUILD_GTK_TESTS='OFF',
                       BUILD_QT5_TESTS='OFF',
-                      BUILD_CPP_TESTS='OFF')
+                      BUILD_CPP_TESTS='OFF',
+                      CMAKE_INSTALL_LIBDIR='lib')
     # poppler unconditionally searches for cairo which we dont want
     replace_in_file('CMakeLists.txt',
                     'macro_optional_find_package(Cairo ${CAIRO_VERSION})',
