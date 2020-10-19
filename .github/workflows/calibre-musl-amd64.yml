@@ -1,0 +1,244 @@
+name: calibre-musl-amd64-build
+
+on:
+  push:
+    branches:
+      - alpine-musl-amd64
+      - '!bypy/virtual_machine/**'
+      - '!bypy/README.rst'
+      - '!bypy/session.vim'
+  workflow_dispatch:
+
+env:
+  CALIBRE_VER: 5.2.0
+
+jobs:
+  job1:
+    name: build_1
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: download src
+        run: |
+          sudo apt-get update
+          sudo apt-get install  python3.8
+          cd /home/runner/work/bypy/
+          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
+          tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
+          mv calibre-${{ env.CALIBRE_VER}} calibre
+          cp -rf bypy/calibre.patch/*  calibre
+
+      - name: calibre-musl-build_1
+        run: |
+          h1=$((`grep -wn "qt-sensors" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
+          h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
+          sed -i "${h1},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py build_dep linux
+
+      - name: 'build_1_pkg.tar.gz'
+        run: |
+          tar -czvPf /home/runner/work/bypy/pkg.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg
+
+      - name: Upload build calibre-musl-build_1 result for job 1
+        uses: actions/upload-artifact@v2
+        with:
+         name: pkg
+         path: /home/runner/work/bypy/pkg.tar.gz
+
+  job2:
+    needs: job1
+    name: build_2
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: download src
+        run: |
+          sudo apt-get update
+          sudo apt-get install  python3.8
+          cd /home/runner/work/bypy/
+          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
+          tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
+          mv calibre-${{ env.CALIBRE_VER}} calibre
+          cp -rf bypy/calibre.patch/*  calibre
+          cp -rf bypy/qt.build/qt_webengine.py  bypy/bypy/pkgs/qt_webengine.py
+          sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+
+      - name: download build calibre-musl-build_1 result for job 1
+        uses: actions/download-artifact@v2
+        with:
+         name: pkg
+         path: /home/runner/work/bypy
+
+      - name: calibre-musl-build_2
+        continue-on-error: true
+        timeout-minutes: 300
+        run: |
+          tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
+          h2=$((`grep -wn "qt-webengine" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
+          h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
+          sed -i "${h2},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
+          h4=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+1))
+          h5=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+2))
+          sed -i "${h4},${h5}d" /home/runner/work/bypy/bypy/bypy/utils.py
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py build_dep linux
+
+      - name: 'build_2_qt-webengine.tar.gz'
+        run: |
+          sudo tar --warning=no-file-changed -czvPf /home/runner/work/bypy/calibre/qt-webengine.tar.gz  /home/runner/work/bypy/calibre/qt-webengine-build
+
+      - name: Upload build calibre-musl-build_2 result for job 2
+        uses: actions/upload-artifact@v2
+        with:
+          name: qt-webengine
+          path: /home/runner/work/bypy/calibre/qt-webengine.tar.gz
+
+  job3:
+    needs: job2
+    name: build_3
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: download src
+        run: |
+          sudo apt-get update
+          sudo apt-get install  python3.8
+          cd /home/runner/work/bypy/
+          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
+          tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
+          mv calibre-${{ env.CALIBRE_VER}} calibre
+          cp -rf bypy/calibre.patch/*  calibre
+          cp -rf bypy/qt.build/qt_webengine.py  bypy/bypy/pkgs/qt_webengine.py
+          sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+
+      - name: download build calibre-musl-build_1 result for job 1
+        uses: actions/download-artifact@v2
+        with:
+          name: pkg
+          path: /home/runner/work/bypy
+
+      - name: download build calibre-musl-build_2 result for job 2
+        uses: actions/download-artifact@v2
+        with:
+          name: qt-webengine
+          path: /home/runner/work/bypy/calibre
+
+
+      - name: calibre-musl-build_3
+        continue-on-error: true
+        timeout-minutes: 300
+        run: |
+          tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
+          tar -xzPf  /home/runner/work/bypy/calibre/qt-webengine.tar.gz
+          h2=$((`grep -wn "qt-webengine" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
+          h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
+          sed -i "${h2},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
+          h4=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+1))
+          h5=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+2))
+          sed -i "${h4},${h5}d" /home/runner/work/bypy/bypy/bypy/utils.py
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py build_dep linux
+
+      - name: 'build_3_qt-webengine.tar.gz'
+        run: |
+          sudo tar --warning=no-file-changed -czvPf /home/runner/work/bypy/calibre/qt-webengine.tar.gz  /home/runner/work/bypy/calibre/qt-webengine-build
+
+      - name: Upload build calibre-musl-build_3 result for job 3
+        uses: actions/upload-artifact@v2
+        with:
+          name: qt-webengine
+          path: /home/runner/work/bypy/calibre/qt-webengine.tar.gz
+
+  job4:
+    needs: job3
+    name: build_4
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: download src
+        run: |
+          sudo apt-get update
+          sudo apt-get install  python3.8
+          cd /home/runner/work/bypy/
+          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
+          tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
+          mv calibre-${{ env.CALIBRE_VER}} calibre
+          cp -rf bypy/calibre.patch/*  calibre
+          cp -rf bypy/qt.build/qt_webengine.py  bypy/bypy/pkgs/qt_webengine.py
+          sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+
+      - name: download build calibre-musl-build_1 result for job 1
+        uses: actions/download-artifact@v2
+        with:
+          name: pkg
+          path: /home/runner/work/bypy
+
+      - name: download build calibre-musl-build_3 result for job 3
+        uses: actions/download-artifact@v2
+        with:
+          name: qt-webengine
+          path: /home/runner/work/bypy/calibre
+
+      - name: calibre-musl-build_4
+        run: |
+          tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
+          tar -xzPf  /home/runner/work/bypy/calibre/qt-webengine.tar.gz
+          h4=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+1))
+          h5=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+2))
+          sed -i "${h4},${h5}d" /home/runner/work/bypy/bypy/bypy/utils.py
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py build_dep linux
+
+      - name: calibre-musl-build_finish
+        run: |
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py linux64
+
+      - name: 'build_calibre_dep.tar.gz'
+        run: |
+          tar -czvPf /home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-x86_64_dep.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg
+
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ env.CALIBRE_VER}}
+          release_name: version ${{ env.CALIBRE_VER}}
+          body: |
+            alpine: calibre-version-${{ env.CALIBRE_VER}}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset 1
+        id: upload-release-asset-1
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: /home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-x86_64_dep.tar.gz
+          asset_name: calibre-${{ env.CALIBRE_VER}}-x86_64_dep.tar.gz
+          asset_content_type: application/x-compressed-tar
+
+      - name: Upload Release Asset 2
+        id: upload-release-asset-2
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz
+          asset_name: calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz
+          asset_content_type: application/x-xz-compressed-tar
