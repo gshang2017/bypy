@@ -91,8 +91,10 @@ def unix_python(args):
                         f'prefix="{PREFIX}"')
         libdir = os.path.join(build_dir(), 'lib')
         for x in (
-            'python*/config-*-linux-gnu/python-config.py',
-            'python*/_sysconfigdata__linux_*-linux-gnu.py',
+#            'python*/config-*-linux-gnu/python-config.py',
+#            'python*/_sysconfigdata__linux_*-linux-gnu.py',
+            'python*/config-*-linux-*/python-config.py',
+            'python*/_sysconfigdata__linux_*-linux-*.py',
         ):
             with open(glob.glob(f'{libdir}/{x}')[0], 'r+b') as f:
                 replace_bdir(f)

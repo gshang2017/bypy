@@ -270,6 +270,11 @@ def create_tarfile(env, compression_level='9'):
         if err.errno != errno.ENOENT:
             raise
     os.mkdir(base)
+#arm build
+    archname = os.uname()
+    if "aarch64"  in archname:
+        arch = 'aarch64'
+#
     #dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'],
     dist = os.path.join(base, '%s-%s-%s.musl.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))
     with tarfile.open(dist, mode='w', format=tarfile.PAX_FORMAT) as tf:

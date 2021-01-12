@@ -35,7 +35,7 @@ def main(args):
         run('./config', '--prefix=/usr', '--openssldir=/etc/ssl', 'shared',
             'zlib', '-Wa,--noexecstack', CFLAGS, LDFLAGS, *optflags)
         run('make ' + MAKEOPTS)
-        run('make test', library_path=os.getcwd())
+        #run('make test', library_path=os.getcwd())
         run('make', 'DESTDIR={}'.format(build_dir()), 'install_sw')
         for x in 'bin lib include'.split():
             os.rename(

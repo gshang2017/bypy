@@ -122,11 +122,11 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
     call('mkfs.ext4', img_store_path)
     mount_image()
     call('sudo tar -C "{}" -xpf "{}"'.format(img_path, archive), echo=False)
-#aarch64
-    if "aarch64"  in archive:
-        qemuurl='https://github.com/multiarch/qemu-user-static/releases/download/v5.2.0-2/qemu-aarch64-static'
-        call('sudo wget "{}" -P "{}"/usr/bin'.format(qemuurl,img_path), echo=False)
-        call('sudo chmod +x  "{}"/usr/bin/qemu-aarch64-static'.format(img_path), echo=False)
+#aarch64_cross
+    aarch64crossurl='http://more.musl.cc/9/x86_64-linux-musl/aarch64-linux-musl-cross.tgz'
+    call('sudo wget "{}" -P "{}"/tmp'.format(aarch64crossurl,img_path), echo=False)
+    call('sudo tar -zxf "{}"/tmp/aarch64-linux-musl-cross.tgz -C "{}"/opt'.format(img_path,img_path), echo=False)
+    call('sudo rm -rf  "{}"/tmp/aarch64-linux-musl-cross.tgz'.format(img_path), echo=False)
 #
     ##if os.getegid() != 100:
     ##    chroot('groupadd -f -g {} {}'.format(os.getegid(), 'crusers'))
@@ -156,7 +156,7 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
         # Basic build environment
         'apk update',
         'apk add shadow',
-        'apk add build-base zsh perl cmake autoconf autoconf-archive automake git curl xz python3 linux-headers nasm libidn-dev libxml2-dev libtool freetype-dev fontconfig-dev meson  gettext-dev dbus-glib-dev ttf-dejavu',
+        'apk add build-base zsh perl cmake autoconf autoconf-archive automake git curl xz python3 linux-headers nasm libidn-dev libxml2-dev libtool freetype-dev fontconfig-dev meson  gettext-dev dbus-glib-dev ttf-dejavu icu-dev libwebp-dev',
         'curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py',
         'python3.8 get-pip.py',
         'python3.8 -m pip install ninja',
@@ -231,7 +231,10 @@ def mount_all(tdir):
     scall('sudo', 'chmod', 'a+w', os.path.join(img_path, 'dev/shm'))
     scall('sudo', 'mount', '--bind', '/dev/shm',
           os.path.join(img_path, 'dev/shm'))
-
+    scall('sudo', 'mkdir', '-p', os.path.join(img_path,'opt/cross'))
+    scall( 'sudo', 'mount', img_path + 'cross.img', os.path.join(img_path,'opt/cross'))
+    scall( 'sudo', 'mount', '--bind', os.path.join(img_path,'tmp'), os.path.join(img_path,'opt/cross/tmp'))
+    scall( 'sudo', 'mount', '--bind', os.path.join(img_path,'sw'), os.path.join(img_path,'opt/cross/sw'))
 
 def umount_all():
     found = True
