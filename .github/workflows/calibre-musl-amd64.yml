@@ -3,10 +3,12 @@ name: calibre-musl-amd64-build
 on:
   push:
     branches:
-      - alpine-musl-amd64
+      - alpine-musl
       - '!bypy/virtual_machine/**'
       - '!bypy/README.rst'
       - '!bypy/session.vim'
+      - '!qt.build.cross/**'      
+      - '!.github/workflows/calibre-musl-aarch64.yml'
   workflow_dispatch:
 
 env:
