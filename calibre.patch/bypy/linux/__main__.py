@@ -274,6 +274,8 @@ def create_tarfile(env, compression_level='9'):
     archname = os.uname()
     if "aarch64"  in archname:
         arch = 'aarch64'
+    if "armv7l"  in archname:
+        arch = 'armv7'         
 #
     #dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'],
     dist = os.path.join(base, '%s-%s-%s.musl.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))

@@ -128,6 +128,12 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
         call('sudo wget "{}" -P "{}"/usr/bin'.format(qemuurl,img_path), echo=False)
         call('sudo chmod +x  "{}"/usr/bin/qemu-aarch64-static'.format(img_path), echo=False)
 #
+#armv7l
+    if "armv7l"  in archive:
+        qemuurl='https://github.com/multiarch/qemu-user-static/releases/download/v5.2.0-2/qemu-arm-static'
+        call('sudo wget "{}" -P "{}"/usr/bin'.format(qemuurl,img_path), echo=False)
+        call('sudo chmod +x  "{}"/usr/bin/qemu-arm-static'.format(img_path), echo=False)
+#
     ##if os.getegid() != 100:
     ##    chroot('groupadd -f -g {} {}'.format(os.getegid(), 'crusers'))
     ##chroot(

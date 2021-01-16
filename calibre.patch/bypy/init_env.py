@@ -185,6 +185,11 @@ def run_tests(path_to_calibre_debug, cwd_on_failure):
 #
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox"
 #
+#arm build
+    archname = os.uname()
+    if "armv7l"  in archname:
+        os.environ["SKIP_QT_BUILD_TEST"] = "1"
+#
     ret = run(path_to_calibre_debug, '--test-build')
     if ret != 0:
         os.chdir(cwd_on_failure)
