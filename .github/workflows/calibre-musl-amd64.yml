@@ -7,8 +7,9 @@ on:
       - '!bypy/virtual_machine/**'
       - '!bypy/README.rst'
       - '!bypy/session.vim'
-      - '!qt.build.cross/**'      
+      - '!qt.build.cross/**'
       - '!.github/workflows/calibre-musl-aarch64.yml'
+      - '!.github/workflows/calibre-musl-armv7.yml'    
   workflow_dispatch:
 
 env:
