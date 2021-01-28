@@ -10,7 +10,7 @@ import shutil
 from contextlib import suppress
 from functools import lru_cache
 
-from ..constants import PYTHON, iswindows, python_major_minor_version
+from ..constants import PYTHON
 from ..utils import run, walk
 from .perfect_hash import get_c_code
 
@@ -137,10 +137,12 @@ def bin_to_c(src):
         yield ''.join(line)
 
 
-def importer_src_to_header(develop_mode_env_var):
+def importer_src_to_header(develop_mode_env_var, path_to_user_env_vars):
     src = open(os.path.join(path_to_freeze_dir(), 'importer.py')).read()
     src = src.replace(
         '__DEVELOP_MODE_ENV_VAR__', repr(develop_mode_env_var), 1)
+    src = src.replace(
+        '__PATH_TO_USER_ENV_VARS__', repr(path_to_user_env_vars), 1)
     src = src.replace(
         '__EXTENSION_SUFFIXES__', repr(extension_suffixes()), 1)
     src = compile_code(src, "bypy-importer.py")
@@ -166,6 +168,19 @@ def as_tree(items, extensions_map):
         for q in parts:
             parent = parent.setdefault(q, {})
     return marshal.dumps((root, extensions_map))
+
+
+def fix_pycryptodome(site_packages_dir):
+    # Fix pycryptodome
+    fs = os.path.join(site_packages_dir, 'Crypto', 'Util', '_file_system.py')
+    with open(fs, 'w') as fspy:
+        fspy.write('''
+import os, sys
+def pycryptodome_filename(dir_comps, filename):
+    path = os.path.join(
+        sys.extensions_location, '.'.join(dir_comps + [filename]))
+    return path
+''')
 
 
 def cleanup_site_packages(sp_dir):
@@ -200,45 +215,13 @@ def cleanup_site_packages(sp_dir):
         if not f.endswith('.py'):
             os.remove(f)
 
-    if not iswindows:
-        return {}
-
-    # special handling for win32
-    os.rmdir(j(sp_dir, 'pywin32_system32'))
-    wl = os.path.join(sp_dir, 'win32', 'lib')
-    for x in os.listdir(wl):
-        os.rename(os.path.join(wl, x), os.path.join(sp_dir, x))
-    os.rmdir(wl)
-    wl = os.path.dirname(wl)
-    for x in os.listdir(wl):
-        f = os.path.join(wl, x)
-        if not os.path.isdir(f):
-            os.rename(f, os.path.join(sp_dir, x))
-    shutil.rmtree(wl)
-
-    # Fix win32com
-    comext = j(sp_dir, 'win32comext')
-    shutil.copytree(j(comext, 'shell'), j(sp_dir, 'win32com', 'shell'))
-    shutil.rmtree(comext)
-
-    # Fix pycryptodome
-    with open(j(sp_dir, 'Crypto', 'Util', '_file_system.py'), 'w') as fspy:
-        fspy.write('''
-import os, sys
-def pycryptodome_filename(dir_comps, filename):
-    base = os.path.join(sys.app_dir, 'app', 'bin')
-    path = os.path.join(base, '.'.join(dir_comps + [filename]))
-    return path
-''')
-    pyver = ''.join(map(str, python_major_minor_version()))
-    return {
-        'pywintypes': f'pywintypes{pyver}.dll',
-        'pythoncom': f'pythoncom{pyver}.dll'
-    }
+    fix_pycryptodome(sp_dir)
+    return {}
 
 
 def freeze_python(
-    base, dest_dir, include_dir, extensions_map, develop_mode_env_var=''
+    base, dest_dir, include_dir, extensions_map, develop_mode_env_var='',
+    path_to_user_env_vars=''
 ):
     files = collect_files_for_internment(base)
     frozen_file = os.path.join(dest_dir, 'python-lib.bypy.frozen')
@@ -279,6 +262,6 @@ get_value_for_hash_index(int index, unsigned long *offset, unsigned long *size)
     }}
 }}
 static const char filesystem_tree[] = {{ {tree} }};
-''' + importer_src_to_header(develop_mode_env_var)
+''' + importer_src_to_header(develop_mode_env_var, path_to_user_env_vars)
     with open(os.path.join(include_dir, 'bypy-data-index.h'), 'w') as f:
         f.write(header)

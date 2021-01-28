@@ -1,7 +1,39 @@
-diff -up src/3rdparty/chromium//third_party/libjpeg_turbo/simd/arm/common/jidctint-neon.c src/3rdparty/chromium//third_party/libjpeg_turbo/simd/arm/common/jidctint-neon.c
---- src/3rdparty/chromium//third_party/libjpeg_turbo/simd/arm/common/jidctint-neon.c	
-+++ src/3rdparty/chromium//third_party/libjpeg_turbo/simd/arm/common/jidctint-neon.c	
-@@ -214,13 +214,13 @@
+diff -up src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctfst-neon.c.arm-incompatible-ints src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctfst-neon.c
+--- src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctfst-neon.c
++++ src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctfst-neon.c
+@@ -84,8 +84,8 @@ void jsimd_idct_ifast_neon(void *dct_tab
+   bitmap = vorrq_s16(bitmap, row6);
+   bitmap = vorrq_s16(bitmap, row7);
+ 
+-  int64_t left_ac_bitmap = vreinterpret_s64_s16(vget_low_s16(bitmap));
+-  int64_t right_ac_bitmap = vreinterpret_s64_s16(vget_high_s16(bitmap));
++  int64_t left_ac_bitmap = vgetq_lane_s64(vreinterpretq_s64_s16(bitmap), 0);
++  int64_t right_ac_bitmap = vgetq_lane_s64(vreinterpretq_s64_s16(bitmap), 1);
+ 
+   if (left_ac_bitmap == 0 && right_ac_bitmap == 0) {
+     /* All AC coefficients are zero. */
+@@ -405,13 +405,13 @@ void jsimd_idct_ifast_neon(void *dct_tab
+                                      vqshrn_n_s16(col7, PASS1_BITS + 3));
+   /* Clamp to range [0-255]. */
+   uint8x16_t cols_01 = vreinterpretq_u8_s8(
+-                            vaddq_s8(cols_01_s8, vdupq_n_u8(CENTERJSAMPLE)));
++                            vaddq_s8(cols_01_s8, (int8x16_t)vdupq_n_u8(CENTERJSAMPLE)));
+   uint8x16_t cols_45 = vreinterpretq_u8_s8(
+-                            vaddq_s8(cols_45_s8, vdupq_n_u8(CENTERJSAMPLE)));
++                            vaddq_s8(cols_45_s8, (int8x16_t)vdupq_n_u8(CENTERJSAMPLE)));
+   uint8x16_t cols_23 = vreinterpretq_u8_s8(
+-                            vaddq_s8(cols_23_s8, vdupq_n_u8(CENTERJSAMPLE)));
++                            vaddq_s8(cols_23_s8, (int8x16_t)vdupq_n_u8(CENTERJSAMPLE)));
+   uint8x16_t cols_67 = vreinterpretq_u8_s8(
+-                            vaddq_s8(cols_67_s8, vdupq_n_u8(CENTERJSAMPLE)));
++                            vaddq_s8(cols_67_s8, (int8x16_t)vdupq_n_u8(CENTERJSAMPLE)));
+ 
+   /* Transpose block ready for store. */
+   uint32x4x2_t cols_0415 = vzipq_u32(vreinterpretq_u32_u8(cols_01),
+diff -up src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctint-neon.c.arm-incompatible-ints src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctint-neon.c
+--- src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctint-neon.c
++++ src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctint-neon.c
+@@ -214,13 +214,13 @@ void jsimd_idct_islow_neon(void *dct_tab
    int16x4_t bitmap = vorr_s16(row7, row6);
    bitmap = vorr_s16(bitmap, row5);
    bitmap = vorr_s16(bitmap, row4);
@@ -17,7 +49,7 @@ diff -up src/3rdparty/chromium//third_party/libjpeg_turbo/simd/arm/common/jidcti
  
      if (left_ac_bitmap == 0) {
        int16x4_t dcval = vshl_n_s16(vmul_s16(row0, quant_row0), PASS1_BITS);
-@@ -266,18 +266,18 @@
+@@ -266,18 +266,18 @@ void jsimd_idct_islow_neon(void *dct_tab
    bitmap = vorr_s16(row7, row6);
    bitmap = vorr_s16(bitmap, row5);
    bitmap = vorr_s16(bitmap, row4);
@@ -39,60 +71,17 @@ diff -up src/3rdparty/chromium//third_party/libjpeg_turbo/simd/arm/common/jidcti
  
      if (right_ac_dc_bitmap != 0) {
        int16x4_t dcval = vshl_n_s16(vmul_s16(row0, quant_row0), PASS1_BITS);
-@@ -630,10 +630,10 @@
-   int8x8_t cols_46_s8 = vqrshrn_n_s16(cols_46_s16, DESCALE_P2 - 16);
-   int8x8_t cols_57_s8 = vqrshrn_n_s16(cols_57_s16, DESCALE_P2 - 16);
-   /* Clamp to range [0-255]. */
--  uint8x8_t cols_02_u8 = vadd_u8(cols_02_s8, vdup_n_u8(CENTERJSAMPLE));
--  uint8x8_t cols_13_u8 = vadd_u8(cols_13_s8, vdup_n_u8(CENTERJSAMPLE));
--  uint8x8_t cols_46_u8 = vadd_u8(cols_46_s8, vdup_n_u8(CENTERJSAMPLE));
--  uint8x8_t cols_57_u8 = vadd_u8(cols_57_s8, vdup_n_u8(CENTERJSAMPLE));
-+  uint8x8_t cols_02_u8 = vadd_u8(vreinterpret_u8_s8(cols_02_s8), vdup_n_u8(CENTERJSAMPLE));
-+  uint8x8_t cols_13_u8 = vadd_u8(vreinterpret_u8_s8(cols_13_s8), vdup_n_u8(CENTERJSAMPLE));
-+  uint8x8_t cols_46_u8 = vadd_u8(vreinterpret_u8_s8(cols_46_s8), vdup_n_u8(CENTERJSAMPLE));
-+  uint8x8_t cols_57_u8 = vadd_u8(vreinterpret_u8_s8(cols_57_s8), vdup_n_u8(CENTERJSAMPLE));
- 
-   /* Transpose 4x8 block and store to memory. */
-   /* Zipping adjacent columns together allows us to store 16-bit elements. */
-@@ -721,10 +721,10 @@
-   int8x8_t cols_46_s8 = vqrshrn_n_s16(cols_46_s16, DESCALE_P2 - 16);
-   int8x8_t cols_57_s8 = vqrshrn_n_s16(cols_57_s16, DESCALE_P2 - 16);
-   /* Clamp to range [0-255]. */
--  uint8x8_t cols_02_u8 = vadd_u8(cols_02_s8, vdup_n_u8(CENTERJSAMPLE));
--  uint8x8_t cols_13_u8 = vadd_u8(cols_13_s8, vdup_n_u8(CENTERJSAMPLE));
--  uint8x8_t cols_46_u8 = vadd_u8(cols_46_s8, vdup_n_u8(CENTERJSAMPLE));
--  uint8x8_t cols_57_u8 = vadd_u8(cols_57_s8, vdup_n_u8(CENTERJSAMPLE));
-+  uint8x8_t cols_02_u8 = vadd_u8(vreinterpret_u8_s8(cols_02_s8), vdup_n_u8(CENTERJSAMPLE));
-+  uint8x8_t cols_13_u8 = vadd_u8(vreinterpret_u8_s8(cols_13_s8), vdup_n_u8(CENTERJSAMPLE));
-+  uint8x8_t cols_46_u8 = vadd_u8(vreinterpret_u8_s8(cols_46_s8), vdup_n_u8(CENTERJSAMPLE));
-+  uint8x8_t cols_57_u8 = vadd_u8(vreinterpret_u8_s8(cols_57_s8), vdup_n_u8(CENTERJSAMPLE));
- 
-   /* Transpose 4x8 block and store to memory. */
-   /* Zipping adjacent columns together allow us to store 16-bit elements. */
-diff --git a/simd/arm/common/jidctred-neon.c b/simd/arm/common/jidctred-neon.c
-index 3c9393b..ed4232c 100644
+diff -up src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctred-neon.c.arm-incompatible-ints src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctred-neon.c
 --- src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctred-neon.c
 +++ src/3rdparty/chromium/third_party/libjpeg_turbo/simd/arm/common/jidctred-neon.c
-@@ -217,9 +217,8 @@
+@@ -217,8 +217,8 @@ void jsimd_idct_4x4_neon(void *dct_table
    bitmap = vorrq_s16(bitmap, row6);
    bitmap = vorrq_s16(bitmap, row7);
  
 -  int64_t left_ac_bitmap = vreinterpret_s64_s16(vget_low_s16(bitmap));
 -  int64_t right_ac_bitmap = vreinterpret_s64_s16(vget_high_s16(bitmap));
--
 +  int64_t left_ac_bitmap = vgetq_lane_s64(vreinterpretq_s64_s16(bitmap), 0);
 +  int64_t right_ac_bitmap = vgetq_lane_s64(vreinterpretq_s64_s16(bitmap), 1);
-   /* Load constants for IDCT computation. */
-   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_4x4_neon_consts);
  
-@@ -452,8 +451,8 @@
-   /* Interleaving store completes the transpose. */
-   uint8x8x2_t output_0123 = vzip_u8(vqmovun_s16(output_cols_02),
-                                     vqmovun_s16(output_cols_13));
--  uint16x4x2_t output_01_23 = { output_0123.val[0], output_0123.val[1] };
--
-+  uint16x4x2_t output_01_23 = { vreinterpret_u16_u8(output_0123.val[0]),
-+                                vreinterpret_u16_u8(output_0123.val[1]) };
-   /* Store 4x4 block to memory. */
-   vst2_lane_u16((uint16_t *)(output_buf[0] + output_col), output_01_23, 0);
-   vst2_lane_u16((uint16_t *)(output_buf[1] + output_col), output_01_23, 1);
+   /* Load constants for IDCT computation. */
+ #if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)

@@ -7,7 +7,7 @@ import shutil
 
 from bypy.constants import (CFLAGS, LDFLAGS, LIBDIR, MAKEOPTS, NMAKE, PREFIX,
                             build_dir, islinux, ismacos, iswindows)
-from bypy.utils import replace_in_file, run, run_shell
+from bypy.utils import replace_in_file, run, run_shell, apply_patch
 
 
 def main(args):
@@ -32,6 +32,8 @@ def main(args):
             '= getPrefix',
             '= getenv("CALIBRE_QT_PREFIX") ?'
             ' getenv("CALIBRE_QT_PREFIX") : getPrefix')
+    apply_patch('qt-base/qt-base-qt-musl-iconv-no-bom.patch')
+    apply_patch('qt-base/qt-base-qt-xcb-util-dependency-remove.patch')
     if iswindows:
         # Enable loading of DLLs from the bin directory
         replace_in_file(

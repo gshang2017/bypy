@@ -15,7 +15,9 @@ from functools import partial
 from bypy.constants import (
     OUTPUT_DIR, PREFIX, SRC as CALIBRE_DIR, is64bit, python_major_minor_version
 )
-from bypy.freeze import extract_extension_modules, freeze_python, path_to_freeze_dir
+from bypy.freeze import (
+    extract_extension_modules, fix_pycryptodome, freeze_python, path_to_freeze_dir
+)
 from bypy.utils import (
     create_job, get_dll_path, mkdtemp, parallel_build, py_compile, run, walk
 )
@@ -158,6 +160,7 @@ def copy_python(env, ext_dir):
     pdir = j(env.lib_dir, 'calibre-extensions')
     if not os.path.exists(pdir):
         os.mkdir(pdir)
+    fix_pycryptodome(j(env.py_dir, 'site-packages'))
     for x in os.listdir(j(env.py_dir, 'site-packages')):
         os.rename(j(env.py_dir, 'site-packages', x), j(env.py_dir, x))
     os.rmdir(j(env.py_dir, 'site-packages'))
@@ -275,7 +278,9 @@ def create_tarfile(env, compression_level='9'):
     if "aarch64"  in archname:
         arch = 'aarch64'
     if "armv7l"  in archname:
-        arch = 'armv7'         
+        arch = 'armv7'
+    if "x86_64"  in archname:
+        arch = 'x86_64'
 #
     #dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'],
     dist = os.path.join(base, '%s-%s-%s.musl.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))
