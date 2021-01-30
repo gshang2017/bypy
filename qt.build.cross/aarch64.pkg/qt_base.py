@@ -27,6 +27,7 @@ def main(args):
            'sublib\nQMAKE_LFLAGS += -L/opt/cross/lib -Wl,-rpath-link,/opt/cross/lib -L/opt/cross/usr/lib -Wl,-rpath-link,/opt/cross/usr/lib  -L/opt/cross/sw/sw/lib -Wl,-rpath-link,/opt/cross/sw/sw/lib'
        )
     apply_patch('qt-base/qt-base-qt-musl-iconv-no-bom.patch')
+    apply_patch('qt-base/qt-base-qt-xcb-util-dependency-remove.patch')
     if islinux:
         # We disable loading of bearer plugins because many distros ship with
         # broken bearer plugins that cause hangs.  At least, this was the case
@@ -74,7 +75,7 @@ def main(args):
     if islinux:
         # Gold linker is needed for Qt 5.13.0 because of
         # https://bugreports.qt.io/browse/QTBUG-76196
-        conf += (' -device-option CROSS_COMPILE=aarch64-linux-musl-  -sysroot /opt/cross  -xplatform linux-aarch64-gnu-g++  -bundled-xcb-xinput -xcb -glib -openssl -qt-pcre'
+        conf += (' -opengl es2 -device-option CROSS_COMPILE=aarch64-linux-musl-  -sysroot /opt/cross  -xplatform linux-aarch64-gnu-g++  -bundled-xcb-xinput -xcb -glib -openssl -qt-pcre'
                  ' -xkbcommon -libinput -qt-libjpeg ')
     elif ismacos:
         conf += ' -no-pkg-config -framework -no-openssl -securetransport'

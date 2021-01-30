@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+3.13#!/usr/bin/env python
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
@@ -18,7 +18,7 @@ from .utils import call, print_cmd, single_instance
 
 DEFAULT_BASE_IMAGE = (
     'http://dl-cdn.alpinelinux.org/alpine/'
-    'v3.12/releases/x86_64/alpine-minirootfs-3.12.0-x86_64.tar.gz'
+    'v3.13/releases/x86_64/alpine-minirootfs-3.13.0-x86_64.tar.gz'
 )
 
 arch = '64'
@@ -123,13 +123,15 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
     mount_image()
     call('sudo tar -C "{}" -xpf "{}"'.format(img_path, archive), echo=False)
 #aarch64_cross
-    aarch64crossurl='http://more.musl.cc/9/x86_64-linux-musl/aarch64-linux-musl-cross.tgz'
+    #aarch64crossurl='http://more.musl.cc/9/x86_64-linux-musl/aarch64-linux-musl-cross.tgz'
+    aarch64crossurl='http://more.musl.cc/10.2.1/x86_64-linux-musl/aarch64-linux-musl-cross.tgz'
     call('sudo wget "{}" -P "{}"/tmp'.format(aarch64crossurl,img_path), echo=False)
     call('sudo tar -zxf "{}"/tmp/aarch64-linux-musl-cross.tgz -C "{}"/opt'.format(img_path,img_path), echo=False)
     call('sudo rm -rf  "{}"/tmp/aarch64-linux-musl-cross.tgz'.format(img_path), echo=False)
 #
 #armv7l_cross
-    armv7lcrossurl='http://more.musl.cc/9.2.1-20191012/x86_64-linux-musl/armv7l-linux-musleabihf-cross.tgz'
+    #armv7lcrossurl='http://more.musl.cc/9.2.1-20191012/x86_64-linux-musl/armv7l-linux-musleabihf-cross.tgz'
+    armv7lcrossurl='http://more.musl.cc/10.2.1/i686-linux-musl/armv7l-linux-musleabihf-cross.tgz'
     call('sudo wget "{}" -P "{}"/tmp'.format(armv7lcrossurl,img_path), echo=False)
     call('sudo tar -zxf "{}"/tmp/armv7l-linux-musleabihf-cross.tgz -C "{}"/opt'.format(img_path,img_path), echo=False)
     call('sudo rm -rf  "{}"/tmp/armv7l-linux-musleabihf-cross.tgz'.format(img_path), echo=False)

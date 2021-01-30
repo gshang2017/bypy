@@ -43,7 +43,7 @@ def main(args):
         #
         # https://chromium-review.googlesource.com/c/v8/v8/+/2136489
         ##apply_patch('qt-webengine-icu67.patch'),
-        apply_patch('qt-webengine/qt-webengine-icu67.patch'),
+        #apply_patch('qt-webengine/qt-webengine-icu67.patch'),
         apply_patch('qt-webengine/qt-webengine-musl-mallinfo.patch'),
         apply_patch('qt-webengine/qt-webengine-musl-siginfo_t.patch'),
         apply_patch('qt-webengine/qt-webengine-musl-pread-pwrite.patch'),
@@ -61,11 +61,18 @@ def main(args):
         apply_patch('qt-webengine/qt-webengine-musl-off_t.patch'),
         apply_patch('qt-webengine/qt-webengine-musl-dispatch_to_musl.patch'),
         apply_patch('qt-webengine/qt-webengine-musl-sandbox.patch'),
-        #apply_patch('qt-webengine/qt-webengine-remove-glibc-check.patch'),
+        apply_patch('qt-webengine/qt-webengine-remove-glibc-check.patch'),
         apply_patch('qt-webengine/qt-webengine-musl-elf-arm.patch'),
         apply_patch('qt-webengine/qt-webengine-musl-crashpad.patch'),
         apply_patch('qt-webengine/qt-webengine-el8-arm-incompatible-ints.patch')
         apply_patch('qt-webengine/qt-webengine-aarch64-videodsp.patch')
+        apply_patch('qt-webengine/qt-webengine-qtbug-88976.patch')
+        #undefined reference to `printing::PrintingContext        
+        replace_in_file(
+          'src/core/config/linux.pri',
+          'gn_args += is_desktop_linux=false',
+          'gn_args += is_desktop_linux=true'
+        )
         os.mkdir('build')
         os.chdir('build')
         conf = ' -pepper-plugins -printing-and-pdf  -webrtc  -spellchecker '
