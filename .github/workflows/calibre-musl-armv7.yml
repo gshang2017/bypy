@@ -4,16 +4,17 @@ on:
   push:
     branches:
       - alpine-musl
-      - '!bypy/virtual_machine/**'
-      - '!bypy/README.rst'
-      - '!bypy/session.vim'
-      - '!qt.build.cross/**'
-      - '!.github/workflows/calibre-musl-aarch64.yml'
-      - '!.github/workflows/calibre-musl-amd64.yml'
+    paths-ignore:
+      - 'bypy/virtual_machine/**'
+      - 'bypy/README.md'
+      - 'bypy/session.vim'
+      - 'qt.build.cross/**'
+      - '.github/workflows/calibre-musl-aarch64.yml'
+      - '.github/workflows/calibre-musl-amd64.yml'
   workflow_dispatch:
 
 env:
-  CALIBRE_VER: 5.2.0
+  CALIBRE_VER: 5.10.1
 
 jobs:
   job1:
@@ -36,7 +37,7 @@ jobs:
 
       - name: calibre-musl-build_1
         run: |
-          h1=$((`grep -wn "f8a34cf52d9f9b9cb8c7f26b12da347d4af7eb904c13189602e4c6b62d1a79dc" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+3))
+          h1=$((`grep -wn "Python" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
           h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
           sed -i "${h1},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
           cd /home/runner/work/bypy/calibre
@@ -100,10 +101,7 @@ jobs:
           tar -xzPf  /home/runner/work/bypy/img.tar.gz
           tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
           mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot
-          sed -i  s/"files\/2573619\/{filename}"/"archive\/v1.6.2.tar.gz"/g  /home/runner/work/bypy/calibre/bypy/sources.json
-          sed -i  s/"hunspell-1.7.0.tar.gz"/"hunspell-1.6.0.tar.gz"/g  /home/runner/work/bypy/calibre/bypy/sources.json
-          sed -i  s/"57be4e03ae9dd62c3471f667a0d81a14513e314d4d92081292b90435944ff951"/"3cd9ceb062fe5814f668e4f22b2fa6e3ba0b339b921739541ce180cac4d6f4c4"/g  /home/runner/work/bypy/calibre/bypy/sources.json
-          h1=$((`grep -wn "qt-base" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+5))
+          h1=$((`grep -wn "dbusglib" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+7))
           h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
           sed -i "${h1},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
           cd /home/runner/work/bypy/calibre
@@ -118,17 +116,6 @@ jobs:
         with:
          name: pkg
          path: /home/runner/work/bypy/pkg.tar.gz
-
-      - name: 'build_2_crossimg.tar.gz'
-        run: |
-          sudo mv /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot.img /home/runner/work/bypy/calibre/bypy/b/linux/32/chrootcross.img
-          tar -czPf /home/runner/work/bypy/crossimg.tar.gz   /home/runner/work/bypy/calibre/bypy/b/linux/32/chrootcross.img
-
-      - name: Upload build calibre-musl-build_2 result for job 2
-        uses: actions/upload-artifact@v2
-        with:
-         name: crossimg
-         path: /home/runner/work/bypy/crossimg.tar.gz
 
   job3:
     needs: job2
@@ -147,10 +134,14 @@ jobs:
           tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
           mv calibre-${{ env.CALIBRE_VER}} calibre
           cp -rf bypy/calibre.patch/*  calibre
-          mv calibre/bypy/armv7.cross.conf calibre/bypy/linux.conf
-          cp -rf bypy/qt.build.cross/armv7.pkg/*  bypy/bypy/pkgs/
-          cp -rf bypy/qt.build.cross/*.py  bypy/bypy/
-          sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+          mv calibre/bypy/armv7.conf calibre/bypy/linux.conf
+
+
+      - name: download build calibre-musl-build_1 result for job 1
+        uses: actions/download-artifact@v2
+        with:
+         name: img
+         path: /home/runner/work/bypy
 
       - name: download build calibre-musl-build_2 result for job 2
         uses: actions/download-artifact@v2
@@ -158,21 +149,15 @@ jobs:
           name: pkg
           path: /home/runner/work/bypy
 
-      - name: download build calibre-musl-build_2 result for job 2
-        uses: actions/download-artifact@v2
-        with:
-         name: crossimg
-         path: /home/runner/work/bypy
-
       - name: calibre-musl-build_3
-        continue-on-error: true
-        timeout-minutes: 330
         run: |
-          tar -xzPf  /home/runner/work/bypy/crossimg.tar.gz
+          tar -xzPf  /home/runner/work/bypy/img.tar.gz
           tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
-          mv /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/qt-base /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/qt-base.bak
           mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot
-          h1=$((`grep -wn "qt-sensors" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
+          sed -i  s/"files\/2573619\/{filename}"/"archive\/v1.6.2.tar.gz"/g  /home/runner/work/bypy/calibre/bypy/sources.json
+          sed -i  s/"hunspell-1.7.0.tar.gz"/"hunspell-1.6.0.tar.gz"/g  /home/runner/work/bypy/calibre/bypy/sources.json
+          sed -i  s/"57be4e03ae9dd62c3471f667a0d81a14513e314d4d92081292b90435944ff951"/"3cd9ceb062fe5814f668e4f22b2fa6e3ba0b339b921739541ce180cac4d6f4c4"/g  /home/runner/work/bypy/calibre/bypy/sources.json
+          h1=$((`grep -wn "qt-base" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+5))
           h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
           sed -i "${h1},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
           cd /home/runner/work/bypy/calibre
@@ -182,21 +167,22 @@ jobs:
         run: |
           tar -czPf /home/runner/work/bypy/pkg.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg
 
-      - name: Upload build calibre-musl-build_3 result for job3
+      - name: Upload build calibre-musl-build_3 result for job 3
         uses: actions/upload-artifact@v2
         with:
          name: pkg
          path: /home/runner/work/bypy/pkg.tar.gz
 
-      - name: 'build_3_img.tar.gz'
+      - name: 'build_3_crossimg.tar.gz'
         run: |
-          tar -czPf /home/runner/work/bypy/img.tar.gz   /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot.img
+          sudo mv /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot.img /home/runner/work/bypy/calibre/bypy/b/linux/32/chrootcross.img
+          tar -czPf /home/runner/work/bypy/crossimg.tar.gz   /home/runner/work/bypy/calibre/bypy/b/linux/32/chrootcross.img
 
       - name: Upload build calibre-musl-build_3 result for job 3
         uses: actions/upload-artifact@v2
         with:
-         name: img
-         path: /home/runner/work/bypy/img.tar.gz
+         name: crossimg
+         path: /home/runner/work/bypy/crossimg.tar.gz
 
   job4:
     needs: job3
@@ -223,60 +209,48 @@ jobs:
       - name: download build calibre-musl-build_3 result for job 3
         uses: actions/download-artifact@v2
         with:
-         name: img
-         path: /home/runner/work/bypy
+          name: pkg
+          path: /home/runner/work/bypy
 
-      - name: download build calibre-musl-build_2 result for job 2
+      - name: download build calibre-musl-build_3 result for job 3
         uses: actions/download-artifact@v2
         with:
          name: crossimg
          path: /home/runner/work/bypy
 
-      - name: download build calibre-musl-build_3 result for job 3
-        uses: actions/download-artifact@v2
-        with:
-          name: pkg
-          path: /home/runner/work/bypy
-
       - name: calibre-musl-build_4
         continue-on-error: true
         timeout-minutes: 330
         run: |
-          tar -xzPf  /home/runner/work/bypy/img.tar.gz
           tar -xzPf  /home/runner/work/bypy/crossimg.tar.gz
           tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
+          mv /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/qt-base /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/qt-base.bak
           mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot
-          h2=$((`grep -wn "qt-webengine" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
+          h1=$((`grep -wn "qt-sensors" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
           h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
-          sed -i "${h2},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
-          h4=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+1))
-          h5=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+2))
-          sed -i "${h4},${h5}d" /home/runner/work/bypy/bypy/bypy/utils.py
+          sed -i "${h1},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
           cd /home/runner/work/bypy/calibre
           sudo python3.8 setup.py build_dep linux 32
 
-      - name: 'build_3_pkg.tar.gz'
+      - name: 'build_4_pkg.tar.gz'
         run: |
           tar -czPf /home/runner/work/bypy/pkg.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg
 
-      - name: Upload build calibre-musl-build_3 result for job3
+      - name: Upload build calibre-musl-build_4 result for job4
         uses: actions/upload-artifact@v2
         with:
          name: pkg
          path: /home/runner/work/bypy/pkg.tar.gz
 
-
-      - name: 'build_4_qt-webengine.tar.gz'
+      - name: 'build_4_img.tar.gz'
         run: |
-          sudo tar --warning=no-file-changed -czPf /home/runner/work/bypy/calibre/qt-webengine.tar.gz  /home/runner/work/bypy/calibre/qt-webengine-build
+          tar -czPf /home/runner/work/bypy/img.tar.gz   /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot.img
 
       - name: Upload build calibre-musl-build_4 result for job 4
         uses: actions/upload-artifact@v2
         with:
-          name: qt-webengine
-          path: /home/runner/work/bypy/calibre/qt-webengine.tar.gz
-
-
+         name: img
+         path: /home/runner/work/bypy/img.tar.gz
 
   job5:
     needs: job4
@@ -300,42 +274,31 @@ jobs:
           cp -rf bypy/qt.build.cross/*.py  bypy/bypy/
           sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
 
-      - name: download build calibre-musl-build_3 result for job 3
+      - name: download build calibre-musl-build_4 result for job 4
         uses: actions/download-artifact@v2
         with:
          name: img
          path: /home/runner/work/bypy
 
-      - name: download build calibre-musl-build_2 result for job 2
+      - name: download build calibre-musl-build_3 result for job 3
         uses: actions/download-artifact@v2
         with:
          name: crossimg
          path: /home/runner/work/bypy
 
-      - name: download build calibre-musl-build_3 result for job 3
+      - name: download build calibre-musl-build_4 result for job 4
         uses: actions/download-artifact@v2
         with:
           name: pkg
           path: /home/runner/work/bypy
 
-      - name: download build calibre-musl-build_4 result for job 4
-        uses: actions/download-artifact@v2
-        with:
-          name: qt-webengine
-          path: /home/runner/work/bypy/calibre
-
       - name: calibre-musl-build_5
         continue-on-error: true
-        timeout-minutes: 300
+        timeout-minutes: 330
         run: |
           tar -xzPf  /home/runner/work/bypy/img.tar.gz
           tar -xzPf  /home/runner/work/bypy/crossimg.tar.gz
           tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
-          tar -xzPf  /home/runner/work/bypy/calibre/qt-webengine.tar.gz
-          sudo find /home/runner/work/bypy/calibre/qt-webengine-build/ -name "*.o" -size 0 -exec rm -rf {} \;
-          sed -i s/"ldflags ="/"ldflags = -L\/usr\/lib "/  /home/runner/work/bypy/calibre/qt-webengine-build/build/src/core/release/v8_snapshot/obj/v8/gen-regexp-special-case.ninja
-          sed -i s/"ldflags ="/"ldflags = -L\/usr\/lib "/  /home/runner/work/bypy/calibre/qt-webengine-build/build/src/core/release/host/obj/third_party/blink/renderer/platform/character_data_generator.ninja
-          sed -i s/"ldflags ="/"ldflags = -L\/usr\/lib "/  /home/runner/work/bypy/calibre/qt-webengine-build/build/src/core/release/v8_snapshot/obj/v8/mksnapshot.ninja
           mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot
           h2=$((`grep -wn "qt-webengine" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
           h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
@@ -350,7 +313,7 @@ jobs:
         run: |
           tar -czPf /home/runner/work/bypy/pkg.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg
 
-      - name: Upload build calibre-musl-build_5 result for job 5
+      - name: Upload build calibre-musl-build_5 result for job5
         uses: actions/upload-artifact@v2
         with:
          name: pkg
@@ -366,6 +329,7 @@ jobs:
         with:
           name: qt-webengine
           path: /home/runner/work/bypy/calibre/qt-webengine.tar.gz
+
 
 
   job6:
@@ -390,13 +354,13 @@ jobs:
           cp -rf bypy/qt.build.cross/*.py  bypy/bypy/
           sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
 
-      - name: download build calibre-musl-build_3 result for job 3
+      - name: download build calibre-musl-build_4 result for job 4
         uses: actions/download-artifact@v2
         with:
          name: img
          path: /home/runner/work/bypy
 
-      - name: download build calibre-musl-build_2 result for job 2
+      - name: download build calibre-musl-build_3 result for job 3
         uses: actions/download-artifact@v2
         with:
          name: crossimg
@@ -416,13 +380,16 @@ jobs:
 
       - name: calibre-musl-build_6
         continue-on-error: true
-        timeout-minutes: 330
+        timeout-minutes: 300
         run: |
           tar -xzPf  /home/runner/work/bypy/img.tar.gz
           tar -xzPf  /home/runner/work/bypy/crossimg.tar.gz
           tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
           tar -xzPf  /home/runner/work/bypy/calibre/qt-webengine.tar.gz
           sudo find /home/runner/work/bypy/calibre/qt-webengine-build/ -name "*.o" -size 0 -exec rm -rf {} \;
+          sed -i s/"ldflags ="/"ldflags = -L\/usr\/lib "/  /home/runner/work/bypy/calibre/qt-webengine-build/build/src/core/release/v8_snapshot/obj/v8/gen-regexp-special-case.ninja
+          sed -i s/"ldflags ="/"ldflags = -L\/usr\/lib "/  /home/runner/work/bypy/calibre/qt-webengine-build/build/src/core/release/host/obj/third_party/blink/renderer/platform/character_data_generator.ninja
+          sed -i s/"ldflags ="/"ldflags = -L\/usr\/lib "/  /home/runner/work/bypy/calibre/qt-webengine-build/build/src/core/release/v8_snapshot/obj/v8/mksnapshot.ninja
           mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot
           h2=$((`grep -wn "qt-webengine" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
           h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
@@ -454,6 +421,7 @@ jobs:
           name: qt-webengine
           path: /home/runner/work/bypy/calibre/qt-webengine.tar.gz
 
+
   job7:
     needs: job6
     name: build_7
@@ -471,8 +439,16 @@ jobs:
           tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
           mv calibre-${{ env.CALIBRE_VER}} calibre
           cp -rf bypy/calibre.patch/*  calibre
-          mv calibre/bypy/armv7.conf calibre/bypy/linux.conf
+          mv calibre/bypy/armv7.cross.conf calibre/bypy/linux.conf
+          cp -rf bypy/qt.build.cross/armv7.pkg/*  bypy/bypy/pkgs/
+          cp -rf bypy/qt.build.cross/*.py  bypy/bypy/
           sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+
+      - name: download build calibre-musl-build_4 result for job 4
+        uses: actions/download-artifact@v2
+        with:
+         name: img
+         path: /home/runner/work/bypy
 
       - name: download build calibre-musl-build_3 result for job 3
         uses: actions/download-artifact@v2
@@ -486,7 +462,85 @@ jobs:
           name: pkg
           path: /home/runner/work/bypy
 
+      - name: download build calibre-musl-build_6 result for job 6
+        uses: actions/download-artifact@v2
+        with:
+          name: qt-webengine
+          path: /home/runner/work/bypy/calibre
+
       - name: calibre-musl-build_7
+        continue-on-error: true
+        timeout-minutes: 330
+        run: |
+          tar -xzPf  /home/runner/work/bypy/img.tar.gz
+          tar -xzPf  /home/runner/work/bypy/crossimg.tar.gz
+          tar -xzPf  /home/runner/work/bypy/pkg.tar.gz
+          tar -xzPf  /home/runner/work/bypy/calibre/qt-webengine.tar.gz
+          sudo find /home/runner/work/bypy/calibre/qt-webengine-build/ -name "*.o" -size 0 -exec rm -rf {} \;
+          mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot
+          h2=$((`grep -wn "qt-webengine" /home/runner/work/bypy/calibre/bypy/sources.json |awk -F: '{print $1}'`+4))
+          h3=$((`grep -n "" /home/runner/work/bypy/calibre/bypy/sources.json|awk -F: '{print $1}'|tail -n1`-2))
+          sed -i "${h2},${h3}d" /home/runner/work/bypy/calibre/bypy/sources.json
+          h4=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+1))
+          h5=$((`grep -wn "qt_build" /home/runner/work/bypy/bypy/bypy/utils.py |awk -F: '{print $1}'`+2))
+          sed -i "${h4},${h5}d" /home/runner/work/bypy/bypy/bypy/utils.py
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py build_dep linux 32
+
+      - name: 'build_7_pkg.tar.gz'
+        run: |
+          tar -czPf /home/runner/work/bypy/pkg.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg
+
+      - name: Upload build calibre-musl-build_7 result for job 7
+        uses: actions/upload-artifact@v2
+        with:
+         name: pkg
+         path: /home/runner/work/bypy/pkg.tar.gz
+
+
+      - name: 'build_7_qt-webengine.tar.gz'
+        run: |
+          sudo tar --warning=no-file-changed -czPf /home/runner/work/bypy/calibre/qt-webengine.tar.gz  /home/runner/work/bypy/calibre/qt-webengine-build
+
+      - name: Upload build calibre-musl-build_7 result for job 7
+        uses: actions/upload-artifact@v2
+        with:
+          name: qt-webengine
+          path: /home/runner/work/bypy/calibre/qt-webengine.tar.gz
+
+  job8:
+    needs: job7
+    name: build_8
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: download src
+        run: |
+          sudo apt-get update
+          sudo apt-get install  python3.8 qemu-user-static
+          cd /home/runner/work/bypy/
+          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
+          tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
+          mv calibre-${{ env.CALIBRE_VER}} calibre
+          cp -rf bypy/calibre.patch/*  calibre
+          mv calibre/bypy/armv7.conf calibre/bypy/linux.conf
+          sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+
+      - name: download build calibre-musl-build_4 result for job 4
+        uses: actions/download-artifact@v2
+        with:
+         name: crossimg
+         path: /home/runner/work/bypy
+
+      - name: download build calibre-musl-build_7 result for job 7
+        uses: actions/download-artifact@v2
+        with:
+          name: pkg
+          path: /home/runner/work/bypy
+
+      - name: calibre-musl-build_8
         continue-on-error: true
         timeout-minutes: 330
         run: |
@@ -501,11 +555,11 @@ jobs:
           cd /home/runner/work/bypy/calibre
           sudo python3.8 setup.py build_dep linux 32
 
-      - name: 'build_5_pkg.tar.gz'
+      - name: 'build_8_pkg.tar.gz'
         run: |
           tar -czPf /home/runner/work/bypy/pkg.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg
 
-      - name: Upload build calibre-musl-build_5 result for job 5
+      - name: Upload build calibre-musl-build_8 result for job 8
         uses: actions/upload-artifact@v2
         with:
          name: pkg

@@ -27,6 +27,7 @@ def main(args):
            'sublib\nQMAKE_LFLAGS += -L/opt/cross/lib -Wl,-rpath-link,/opt/cross/lib -L/opt/cross/usr/lib -Wl,-rpath-link,/opt/cross/usr/lib  -L/opt/cross/sw/sw/lib -Wl,-rpath-link,/opt/cross/sw/sw/lib'
        )
     apply_patch('qt-base/qt-base-qt-musl-iconv-no-bom.patch')
+    apply_patch('qt-base/qt-base-qt-xcb-util-dependency-remove.patch')
     if islinux:
         # We disable loading of bearer plugins because many distros ship with
         # broken bearer plugins that cause hangs.  At least, this was the case
