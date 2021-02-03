@@ -10,6 +10,7 @@ on:
       - 'bypy/session.vim'
       - '.github/workflows/calibre-musl-amd64.yml'
       - '.github/workflows/calibre-musl-armv7.yml'
+      - '.github/workflows/calibre-musl-modify.yml'
   workflow_dispatch:
 
 env:
