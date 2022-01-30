@@ -31,6 +31,7 @@ def base_dir():
     return ans
 
 
+UNIVERSAL_ARCHES = ()
 ROOT = os.environ.get('BYPY_ROOT', '/').replace('/', os.sep)
 is64bit = sys.maxsize > (1 << 32)
 SW = os.path.join(ROOT, 'sw')
@@ -38,12 +39,14 @@ if iswindows:
     is64bit = os.environ['BUILD_ARCH'] == '64'
     SW += '64' if is64bit else '32'
 OUTPUT_DIR = os.path.join(SW, 'dist')
+WORKER_DIR = os.path.join(SW, 'worker')
 PKG = os.path.join(SW, 'pkg')
 BYPY = os.path.join(ROOT, 'bypy')
 SRC = os.path.join(ROOT, 'src')
 OS_NAME = 'windows' if iswindows else ('macos' if ismacos else 'linux')
 SOURCES = os.path.join(ROOT, 'sources')
 PATCHES = os.path.join(BYPY, 'patches')
+SH = 'C:/cygwin64/bin/zsh' if iswindows else '/bin/zsh'
 if iswindows:
     os.environ['TMPDIR'] = os.environ['TEMP'] = os.environ['TMP'] = tempfile.tempdir = r'C:\t\t'  # noqa
 PREFIX = os.path.join(SW, 'sw')
@@ -59,8 +62,10 @@ CMAKE = 'cmake'
 NMAKE = 'nmake'
 PERL = 'perl'
 RUBY = 'ruby'
+NODEJS = 'node'
 NASM = 'nasm'
 CL = 'cl.exe'
+LINK = 'link.exe'
 LIB = 'lib.exe'
 
 
@@ -78,6 +83,7 @@ if iswindows:
     vcvars_env = query_vcvarsall(is64bit)
     PERL = os.environ.get('PERL', 'perl.exe')
     RUBY = os.environ.get('RUBY', 'ruby.exe')
+    NODEJS = os.environ.get('NODEJS', 'node.exe')
     # Remove cygwin paths from environment
     paths = [
         p.replace('/', os.sep) for p in vcvars_env['PATH'].split(os.pathsep)]
@@ -123,9 +129,14 @@ else:
         LDFLAGS = worker_env['LDFLAGS'] = \
                 f'-headerpad_max_install_names -L{LIBDIR}'
         CMAKE = os.path.join(BIN, 'cmake')
+        if os.environ.get('BYPY_UNIVERSAL') == 'true':
+            UNIVERSAL_ARCHES = ('x86_64', 'arm64')
+        if 'BYPY_DEPLOY_TARGET' in os.environ:
+            worker_env['MACOSX_DEPLOYMENT_TARGET'] = os.environ[
+                'BYPY_DEPLOY_TARGET']
     else:
         LDFLAGS = worker_env['LDFLAGS'] = \
-                f'-L{LIBDIR} -Wl,-rpath-link,{LIBDIR}'
+            f'-L{LIBDIR} -Wl,-rpath-link,{LIBDIR}'
 
 
 def mkdtemp(prefix=''):
@@ -141,10 +152,25 @@ def mkdtemp(prefix=''):
     return tempfile.mkdtemp(prefix=prefix, dir=tdir)
 
 
-def build_dir(newval=None):
+def current_build_arch(val=False):
+    if val is not False:
+        current_build_arch.ans = val
+    return getattr(current_build_arch, 'ans', None)
+
+
+def build_dir(newval=None, current_arch=None):
     if newval is not None:
         build_dir.ans = newval
+        current_build_arch(current_arch)
     return getattr(build_dir, 'ans', None)
+
+
+def is_arm_half_of_lipo_build():
+    return ismacos and UNIVERSAL_ARCHES and 'arm' in (
+        current_build_arch() or '')
+
+
+lipo_data = {}
 
 
 @lru_cache()

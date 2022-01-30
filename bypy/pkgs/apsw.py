@@ -13,13 +13,13 @@ def main(args):
         run(
             PYTHON, 'setup.py', 'fetch', '--all',
             '--missing-checksum-ok', 'build',
-            '--enable-all-extensions',
+            '--enable-all-extensions', '--enable=load_extension',
             'install', '--root', build_dir()
         )
     else:
         run(
-            PYTHON, 'setup.py', 'build', 'install', '--root', build_dir(),
-            library_path=True)
+            PYTHON, 'setup.py', 'build', '--enable=load_extension', 'install',
+            '--root', build_dir(), library_path=True)
     python_install()
 
 

@@ -1,0 +1,157 @@
+name: calibre-musl-update-build
+
+on:
+  push:
+    branches:
+      - alpine-musl
+    paths:
+      - '.github/workflows/calibre-musl-update.yml'
+  workflow_dispatch:
+
+env:
+  CALIBRE_VER: 5.35.0
+  CALIBRE_DEP_VER: 5.10.1
+
+jobs:
+  job1:
+    name: build_1
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: download src
+        run: |
+          sudo apt-get update
+          sudo apt-get install  python3.8
+          cd /home/runner/work/bypy/
+          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
+          wget  https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-x86_64_dep.tar.gz
+          tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
+          mv calibre-${{ env.CALIBRE_VER}} calibre
+          tar xzPf calibre-${{ env.CALIBRE_DEP_VER}}-x86_64_dep.tar.gz
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/apsw
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/sqlite
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/zeroconf
+          cp -rf /home/runner/work/bypy/bypy/calibre.patch/*  /home/runner/work/bypy/calibre
+          sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+          sed -i  s/aarch64/x86_64/g  /home/runner/work/bypy/calibre/bypy/linux/__main__.py
+          mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/64/chroot
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py build_dep linux
+          sudo python3.8 setup.py linux64
+
+      - name: 'build_calibre_dep.tar.gz'
+        run: |
+          tar -czPf /home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-x86_64_dep.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg
+
+      - name: Create Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
+          tag: v${{ env.CALIBRE_VER}}
+          name: version ${{ env.CALIBRE_VER}}
+          body: |
+            alpine: calibre-version-${{ env.CALIBRE_VER}}
+          draft: false
+          prerelease: false
+          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-x86_64_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz"
+
+
+  job2:
+    name: build_2
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: download src
+        run: |
+          sudo apt-get update
+          sudo apt-get install  python3.8 qemu-user-static
+          cd /home/runner/work/bypy/
+          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
+          wget  https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-armv7_dep.tar.gz
+          tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
+          mv calibre-${{ env.CALIBRE_VER}} calibre
+          tar xzPf calibre-${{ env.CALIBRE_DEP_VER}}-armv7_dep.tar.gz
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/apsw
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/sqlite
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/zeroconf
+          cp -rf bypy/calibre.patch/*  calibre
+          mv calibre/bypy/armv7.conf calibre/bypy/linux.conf
+          sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+          mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/32/chroot
+          sed -i  s/"hunspell-1.7"/"hunspell-1.6"/g  /home/runner/work/bypy/calibre/setup/extensions.json
+          sed -i  s/"hunspell-1.7"/"hunspell-1.6"/g  /home/runner/work/bypy/calibre/bypy/linux/__main__.py
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py build_dep linux 32
+          sudo python3.8 setup.py linux32
+
+      - name: 'build_calibre_dep.tar.gz'
+        run: |
+          tar -czPf /home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-armv7_dep.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg
+
+      - name: Create Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
+          tag: v${{ env.CALIBRE_VER}}
+          name: version ${{ env.CALIBRE_VER}}
+          body: |
+            alpine: calibre-version-${{ env.CALIBRE_VER}}
+          draft: false
+          prerelease: false
+          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-armv7_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.musl.txz"
+
+  job3:
+    name: build_3
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: download src
+        run: |
+          sudo apt-get update
+          sudo apt-get install  python3.8 qemu-user-static
+          cd /home/runner/work/bypy/
+          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
+          wget  https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-aarch64_dep.tar.gz
+          tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
+          mv calibre-${{ env.CALIBRE_VER}} calibre
+          tar xzPf calibre-${{ env.CALIBRE_DEP_VER}}-aarch64_dep.tar.gz
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/apsw
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/sqlite
+          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/zeroconf
+          cp -rf bypy/calibre.patch/*  calibre
+          mv calibre/bypy/aarch64.conf calibre/bypy/linux.conf
+          sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
+          mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/64/chroot
+          sed -i  s/"hunspell-1.7"/"hunspell-1.6"/g  /home/runner/work/bypy/calibre/setup/extensions.json
+          sed -i  s/"hunspell-1.7"/"hunspell-1.6"/g  /home/runner/work/bypy/calibre/bypy/linux/__main__.py
+          cd /home/runner/work/bypy/calibre
+          sudo python3.8 setup.py build_dep linux
+          sudo python3.8 setup.py linux64
+
+      - name: 'build_calibre_dep.tar.gz'
+        run: |
+          tar -czPf /home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-aarch64_dep.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg
+
+      - name: Create Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
+          tag: v${{ env.CALIBRE_VER}}
+          name: version ${{ env.CALIBRE_VER}}
+          body: |
+            alpine: calibre-version-${{ env.CALIBRE_VER}}
+          draft: false
+          prerelease: false
+          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-aarch64_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.musl.txz"
