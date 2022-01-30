@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  CALIBRE_VER: 5.10.1
+  CALIBRE_VER: 5.35.0
 
 jobs:
   job1:
