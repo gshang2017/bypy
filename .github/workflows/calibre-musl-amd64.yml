@@ -11,7 +11,9 @@ on:
       - 'qt.build.cross/**'
       - '.github/workflows/calibre-musl-aarch64.yml'
       - '.github/workflows/calibre-musl-armv7.yml'
-      - '.github/workflows/calibre-musl-modify.yml'      
+      - '.github/workflows/calibre-musl-modify.yml'
+      - '.github/workflows/calibre-musl-modify-env.yml'
+      - '.github/workflows/calibre-musl-update.yml'
   workflow_dispatch:
 
 env:
