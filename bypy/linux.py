@@ -162,10 +162,11 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
         # Basic build environment
         'apk update',
         'apk add shadow',
-        'apk add build-base zsh perl cmake autoconf autoconf-archive automake git curl xz python3 linux-headers nasm libidn-dev libxml2-dev libtool freetype-dev fontconfig-dev meson  gettext-dev dbus-glib-dev ttf-dejavu',
-        'curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py',
-        'python3.8 get-pip.py',
-        'python3.8 -m pip install ninja',
+        'apk add build-base zsh perl cmake autoconf autoconf-archive automake git curl xz python3 linux-headers nasm libidn-dev libxml2-dev libtool freetype-dev fontconfig-dev meson  gettext-dev dbus-glib-dev ttf-dejavu mesa-dev',
+        'apk add py3-pip',
+        #'curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py',
+        #'python3.8 get-pip.py',
+        'python3.8 -m pip install ninja==1.10.0',
         ##'apt-get update',
         ##'apt-get install -y build-essential cmake software-properties-common'
         ##' nasm chrpath zsh git uuid-dev libmount-dev'

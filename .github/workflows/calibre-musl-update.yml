@@ -9,44 +9,57 @@ on:
   workflow_dispatch:
 
 env:
-  CALIBRE_VER: 5.35.0
-  CALIBRE_DEP_VER: 5.10.1
+  CALIBRE_VER: 5.44.0
+  CALIBRE_DEP_VER: 5.35.0
 
 jobs:
   job1:
-    name: build_1
+    name: build_calibre
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source code
         uses: actions/checkout@v2
 
-      - name: download src
+      - name: build_x86_64
         run: |
           sudo apt-get update
-          sudo apt-get install  python3.8
+          sudo apt-get install  python3.8 qemu-user-static
           cd /home/runner/work/bypy/
           wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
-          wget  https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-x86_64_dep.tar.gz
+          cp -rf /home/runner/work/bypy/ /home/runner/work/bypy.bak
+          wget -P /home/runner/work  https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-x86_64_dep.tar.gz
           tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
           mv calibre-${{ env.CALIBRE_VER}} calibre
-          tar xzPf calibre-${{ env.CALIBRE_DEP_VER}}-x86_64_dep.tar.gz
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/apsw
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/sqlite
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/zeroconf
+          tar xzPf /home/runner/work/calibre-${{ env.CALIBRE_DEP_VER}}-x86_64_dep.tar.gz
           cp -rf /home/runner/work/bypy/bypy/calibre.patch/*  /home/runner/work/bypy/calibre
           sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
           sed -i  s/aarch64/x86_64/g  /home/runner/work/bypy/calibre/bypy/linux/__main__.py
           mkdir -p /home/runner/work/bypy/calibre/bypy/b/linux/64/chroot
           cd /home/runner/work/bypy/calibre
-          sudo python3.8 setup.py build_dep linux
           sudo python3.8 setup.py linux64
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz.original
 
-      - name: 'build_calibre_dep.tar.gz'
+      - name: build_x86_64_modify.env
+        run: |
+          cd /home/runner/work/bypy/calibre
+          echo -e "\nimport re\r#https://github.com/snomiao/calibre-utf8-path\r# 定义文件名转换函数\rdef re_filename(filename):\r    if len(filename) > 80:\r       filename = filename[0:80]\r# 替换为空\r    return re.sub(r\"[\/\\\\\\\\\\:\*\?\\\"\<\>\|\\\\0]\", \"\", filename)\r"   >> src/calibre/db/backend.py
+          sed -i s/"author = ascii_filename(author"/"    author = ascii_filename(author"/g   src/calibre/db/backend.py
+          sed -i s/"title  = ascii_filename(title"/"    title  = ascii_filename(title"/g   src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        ascii_filename_set = os.environ.get('CALIBRE_ASCII_FILENAME', 'true')" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        if ascii_filename_set == 'false':" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\            author = re_filename(author)[:l]" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\            title  = re_filename(title.lstrip())[:l].rstrip()" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        else:" src/calibre/db/backend.py
+          sudo python3.8 setup.py linux64
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.modify.env.musl.txz
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz.original /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz
+
+      - name: 'build_calibre_x86_64_dep.tar.gz'
         run: |
           tar -czPf /home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-x86_64_dep.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg
 
-      - name: Create Release
-        id: create_release
+      - name: Create Release x86_64
+        id: create_release_x86_64
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -54,32 +67,21 @@ jobs:
           tag: v${{ env.CALIBRE_VER}}
           name: version ${{ env.CALIBRE_VER}}
           body: |
-            alpine: calibre-version-${{ env.CALIBRE_VER}}
+            alpine: calibre-version-${{ env.CALIBRE_VER}} modify.env版支持中文目录书库需设定环境变量(CALIBRE_ASCII_FILENAME=false)
           draft: false
           prerelease: false
-          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-x86_64_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz"
+          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-x86_64_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.musl.txz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-x86_64.modify.env.musl.txz"
 
-
-  job2:
-    name: build_2
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Checkout source code
-        uses: actions/checkout@v2
-
-      - name: download src
+      - name: build_armv7
         run: |
-          sudo apt-get update
-          sudo apt-get install  python3.8 qemu-user-static
+          cd /home/runner/work/
+          sudo rm -rf /home/runner/work/bypy
+          cp -rf /home/runner/work/bypy.bak /home/runner/work/bypy
           cd /home/runner/work/bypy/
-          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
-          wget  https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-armv7_dep.tar.gz
+          wget -P /home/runner/work https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-armv7_dep.tar.gz
           tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
           mv calibre-${{ env.CALIBRE_VER}} calibre
-          tar xzPf calibre-${{ env.CALIBRE_DEP_VER}}-armv7_dep.tar.gz
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/apsw
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/sqlite
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg/zeroconf
+          tar xzPf /home/runner/work/calibre-${{ env.CALIBRE_DEP_VER}}-armv7_dep.tar.gz
           cp -rf bypy/calibre.patch/*  calibre
           mv calibre/bypy/armv7.conf calibre/bypy/linux.conf
           sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
@@ -87,15 +89,30 @@ jobs:
           sed -i  s/"hunspell-1.7"/"hunspell-1.6"/g  /home/runner/work/bypy/calibre/setup/extensions.json
           sed -i  s/"hunspell-1.7"/"hunspell-1.6"/g  /home/runner/work/bypy/calibre/bypy/linux/__main__.py
           cd /home/runner/work/bypy/calibre
-          sudo python3.8 setup.py build_dep linux 32
           sudo python3.8 setup.py linux32
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.musl.txz /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.musl.txz.original
 
-      - name: 'build_calibre_dep.tar.gz'
+      - name: build_armv7_modify.env
+        run: |
+          cd /home/runner/work/bypy/calibre
+          echo -e "\nimport re\r#https://github.com/snomiao/calibre-utf8-path\r# 定义文件名转换函数\rdef re_filename(filename):\r    if len(filename) > 80:\r       filename = filename[0:80]\r# 替换为空\r    return re.sub(r\"[\/\\\\\\\\\\:\*\?\\\"\<\>\|\\\\0]\", \"\", filename)\r"   >> src/calibre/db/backend.py
+          sed -i s/"author = ascii_filename(author"/"    author = ascii_filename(author"/g   src/calibre/db/backend.py
+          sed -i s/"title  = ascii_filename(title"/"    title  = ascii_filename(title"/g   src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        ascii_filename_set = os.environ.get('CALIBRE_ASCII_FILENAME', 'true')" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        if ascii_filename_set == 'false':" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\            author = re_filename(author)[:l]" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\            title  = re_filename(title.lstrip())[:l].rstrip()" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        else:" src/calibre/db/backend.py
+          sudo python3.8 setup.py linux32
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.musl.txz /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.modify.env.musl.txz
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.musl.txz.original /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.musl.txz
+
+      - name: 'build_calibre_armv7_dep.tar.gz'
         run: |
           tar -czPf /home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-armv7_dep.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/32/sw/pkg
 
-      - name: Create Release
-        id: create_release
+      - name: Create Release armv7
+        id: create_release_armv7
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -103,31 +120,21 @@ jobs:
           tag: v${{ env.CALIBRE_VER}}
           name: version ${{ env.CALIBRE_VER}}
           body: |
-            alpine: calibre-version-${{ env.CALIBRE_VER}}
+            alpine: calibre-version-${{ env.CALIBRE_VER}} modify.env版支持中文目录书库需设定环境变量(CALIBRE_ASCII_FILENAME=false)
           draft: false
           prerelease: false
-          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-armv7_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.musl.txz"
+          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-armv7_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.musl.txz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-armv7.modify.env.musl.txz"
 
-  job3:
-    name: build_3
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Checkout source code
-        uses: actions/checkout@v2
-
-      - name: download src
+      - name: build_aarch64
         run: |
-          sudo apt-get update
-          sudo apt-get install  python3.8 qemu-user-static
+          cd /home/runner/work/
+          sudo rm -rf /home/runner/work/bypy
+          cp -rf /home/runner/work/bypy.bak /home/runner/work/bypy
           cd /home/runner/work/bypy/
-          wget  https://download.calibre-ebook.com/${{ env.CALIBRE_VER}}/calibre-${{ env.CALIBRE_VER}}.tar.xz
-          wget  https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-aarch64_dep.tar.gz
+          wget -P /home/runner/work https://github.com/gshang2017/bypy/releases/download/v${{ env.CALIBRE_DEP_VER}}/calibre-${{ env.CALIBRE_DEP_VER}}-aarch64_dep.tar.gz
           tar -xJf calibre-${{ env.CALIBRE_VER}}.tar.xz
           mv calibre-${{ env.CALIBRE_VER}} calibre
-          tar xzPf calibre-${{ env.CALIBRE_DEP_VER}}-aarch64_dep.tar.gz
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/apsw
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/sqlite
-          rm -rf /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg/zeroconf
+          tar xzPf /home/runner/work/calibre-${{ env.CALIBRE_DEP_VER}}-aarch64_dep.tar.gz
           cp -rf bypy/calibre.patch/*  calibre
           mv calibre/bypy/aarch64.conf calibre/bypy/linux.conf
           sed -i  s/readonly=True/readonly=False/g  /home/runner/work/bypy/bypy/bypy/linux.py
@@ -135,15 +142,30 @@ jobs:
           sed -i  s/"hunspell-1.7"/"hunspell-1.6"/g  /home/runner/work/bypy/calibre/setup/extensions.json
           sed -i  s/"hunspell-1.7"/"hunspell-1.6"/g  /home/runner/work/bypy/calibre/bypy/linux/__main__.py
           cd /home/runner/work/bypy/calibre
-          sudo python3.8 setup.py build_dep linux
           sudo python3.8 setup.py linux64
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.musl.txz /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.musl.txz.original
 
-      - name: 'build_calibre_dep.tar.gz'
+      - name: build_aarch64_modify.env
+        run: |
+          cd /home/runner/work/bypy/calibre
+          echo -e "\nimport re\r#https://github.com/snomiao/calibre-utf8-path\r# 定义文件名转换函数\rdef re_filename(filename):\r    if len(filename) > 80:\r       filename = filename[0:80]\r# 替换为空\r    return re.sub(r\"[\/\\\\\\\\\\:\*\?\\\"\<\>\|\\\\0]\", \"\", filename)\r"   >> src/calibre/db/backend.py
+          sed -i s/"author = ascii_filename(author"/"    author = ascii_filename(author"/g   src/calibre/db/backend.py
+          sed -i s/"title  = ascii_filename(title"/"    title  = ascii_filename(title"/g   src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        ascii_filename_set = os.environ.get('CALIBRE_ASCII_FILENAME', 'true')" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        if ascii_filename_set == 'false':" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\            author = re_filename(author)[:l]" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\            title  = re_filename(title.lstrip())[:l].rstrip()" src/calibre/db/backend.py
+          sed -i "/author = ascii_filename(author/i\        else:" src/calibre/db/backend.py
+          sudo python3.8 setup.py linux64
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.musl.txz /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.modify.env.musl.txz
+          sudo mv /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.musl.txz.original /home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.musl.txz
+
+      - name: 'build_calibre_aarch64_dep.tar.gz'
         run: |
           tar -czPf /home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-aarch64_dep.tar.gz /home/runner/work/bypy/calibre/bypy/b/linux/64/sw/pkg
 
-      - name: Create Release
-        id: create_release
+      - name: Create Release aarch64
+        id: create_release_aarch64
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -151,7 +173,7 @@ jobs:
           tag: v${{ env.CALIBRE_VER}}
           name: version ${{ env.CALIBRE_VER}}
           body: |
-            alpine: calibre-version-${{ env.CALIBRE_VER}}
+            alpine: calibre-version-${{ env.CALIBRE_VER}} modify.env版支持中文目录书库需设定环境变量(CALIBRE_ASCII_FILENAME=false)
           draft: false
           prerelease: false
-          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-aarch64_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.musl.txz"
+          artifacts: "/home/runner/work/bypy/calibre-${{ env.CALIBRE_VER}}-aarch64_dep.tar.gz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.musl.txz,/home/runner/work/bypy/calibre/dist/calibre-${{ env.CALIBRE_VER}}-aarch64.modify.env.musl.txz"

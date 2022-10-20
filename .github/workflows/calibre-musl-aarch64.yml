@@ -1,18 +1,6 @@
 name: calibre-musl-aarch64-build
 
 on:
-  push:
-    branches:
-      - alpine-musl
-    paths-ignore:
-      - 'bypy/virtual_machine/**'
-      - 'bypy/README.md'
-      - 'bypy/session.vim'
-      - '.github/workflows/calibre-musl-amd64.yml'
-      - '.github/workflows/calibre-musl-armv7.yml'
-      - '.github/workflows/calibre-musl-modify.yml'
-      - '.github/workflows/calibre-musl-modify-env.yml'
-      - '.github/workflows/calibre-musl-update.yml'
   workflow_dispatch:
 
 env:
