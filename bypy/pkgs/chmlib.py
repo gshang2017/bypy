@@ -4,18 +4,15 @@
 
 import os
 
-from bypy.constants import ismacos, iswindows, CL, LIB
-from bypy.utils import simple_build, run, install_binaries, copy_headers, apply_patch
+from bypy.constants import ismacos, iswindows, CL, LIB, PATCHES, current_build_arch
+from bypy.utils import simple_build, run, install_binaries, copy_headers, apply_patch, replace_in_file
+
+
+needs_lipo = True
 
 
 def main(args):
-#arm build
-    arch = os.uname()
-    if "aarch64"  in arch:
-        apply_patch('chmlib/chmlib-arm.patch')
-    if "armv7l"  in arch:
-        apply_patch('chmlib/chmlib-arm.patch')
-#
+    apply_patch('chmlib-empty-file-not-dir.patch', level=1)  # needed for aarch64
     if iswindows:
         os.chdir('src')
         for f in 'chm_lib.c lzx.c'.split():
@@ -26,17 +23,32 @@ def main(args):
         copy_headers('chm_lib.h')
         copy_headers('lzx.h', 'src')
     else:
-#        conf = '--disable-dependency-tracking'
-#        if ismacos:
-#            conf += ' --disable-pread --disable-io64'
-#        simple_build(conf)
-#aarch64 build
+        # test for malloc breaks on macos universal.
+        # All system we care about have malloc anyway
+        replace_in_file(
+            'configure',
+            'if test $ac_cv_func_malloc_0_nonnull = yes; then',
+            'if test 1; then'
+        )
+        replace_in_file('src/chm_lib.c', 'pread64', 'pread')
+        apply_patch('chmlib-integer-types.patch', level=1)  # needed for aarch64
+        # updated config.guess is needed for aarch64
+        with open('config.guess', 'wb') as dest, open(os.path.join(PATCHES, 'config.guess'), 'rb') as src:
+            dest.write(src.read())
+        if ismacos:
+            with open('config.sub', 'w') as dest:
+                if 'arm' in current_build_arch():
+                    dest.write('echo arm-apple-darwin')
+                else:
+                    dest.write('echo x86_64-apple-darwin')
+#aarch64 armv7l build
         arch = os.uname()
-        if "aarch64"  in arch:
+        if "aarch64" or "armv7l" in arch:
             conf = '--disable-dependency-tracking --build=arm-linux'
 #
         else:
-            conf = '--disable-dependency-tracking'
+            conf = '--disable-dependency-tracking --build=amd64-linux'  
+        #conf = '--disable-dependency-tracking'
         if ismacos:
             conf += ' --disable-pread --disable-io64'
         simple_build(conf)

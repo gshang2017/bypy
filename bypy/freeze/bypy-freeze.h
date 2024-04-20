@@ -7,6 +7,7 @@
 #pragma once
 
 #define UNICODE
+#define PY_SSIZE_T_CLEAN
 
 #ifdef _WIN32
 #define _WIN32_WINNT 0x0502
@@ -27,6 +28,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <bypy-data-index.h>
+#ifdef __APPLE__
+#include <os/log.h>
+#endif
 #define fatal(...) { log_error(__VA_ARGS__); exit(EXIT_FAILURE); }
 #define arraysz(x) (sizeof(x)/sizeof(x[0]))
 
@@ -437,7 +441,7 @@ initialize_data_access(PyObject *self, PyObject *args) {
     datastore_ptr = mmap(0, datastore_len, PROT_READ, MAP_SHARED, datastore_fd, 0);
     if (datastore_ptr == MAP_FAILED) { PyErr_SetFromErrnoWithFilenameObject(PyExc_OSError, path); close(datastore_fd); datastore_fd = -1; return NULL; }
 #endif
-    return PyBytes_FromStringAndSize(filesystem_tree, sizeof(filesystem_tree));
+    return PyBytes_FromStringAndSize((const char*)filesystem_tree, sizeof(filesystem_tree));
 }
 
 
@@ -624,7 +628,7 @@ bypy_frozen_importer(void) {
     return m;
 }
 
-static void
+static inline void
 set_sys_string(const char* key, const wchar_t* val) {
     PyObject *temp = PyUnicode_FromWideChar(val, -1);
     if (temp) {
@@ -635,7 +639,7 @@ set_sys_string(const char* key, const wchar_t* val) {
     }
 }
 
-static void
+static inline void
 set_sys_bool(const char* key, const bool val) {
 	PyObject *pyval = PyBool_FromLong(val);
 	if (PySys_SetObject(key, pyval) != 0) fatal("Failed to set attribute on sys: %s", key);
@@ -702,8 +706,15 @@ show_error_during_setup() {
 		PyTracebackObject *pactual_trace = (PyTracebackObject*)exc_tb;
         while (pactual_trace != NULL) {
 			PyFrameObject *cur_frame = pactual_trace->tb_frame;
+#if PY_VERSION_HEX >= 0x030b0000
+            const PyCodeObject *code = PyFrame_GetCode(cur_frame);
+			const char *fname = PyUnicode_AsUTF8(code->co_filename);
+            const char *func = PyUnicode_AsUTF8(code->co_name);
+            Py_DECREF(code);
+#else
 			const char *fname = PyUnicode_AsUTF8(cur_frame->f_code->co_filename);
             const char *func = PyUnicode_AsUTF8(cur_frame->f_code->co_name);
+#endif
 			int line = PyFrame_GetLineNumber(cur_frame);
             P("  File %s, line %d, in %s", fname ? fname : "<unknown file>", line, func ? func : "<unknown function>");
 			pactual_trace = pactual_trace->tb_next;

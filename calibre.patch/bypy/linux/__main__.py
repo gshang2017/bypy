@@ -12,20 +12,17 @@ import tarfile
 import time
 from functools import partial
 
-from bypy.constants import (
-    OUTPUT_DIR, PREFIX, SRC as CALIBRE_DIR, is64bit, python_major_minor_version
-)
-from bypy.freeze import (
-    extract_extension_modules, fix_pycryptodome, freeze_python, path_to_freeze_dir
-)
-from bypy.utils import (
-    create_job, get_dll_path, mkdtemp, parallel_build, py_compile, run, walk
-)
+from bypy.constants import LIBDIR, OUTPUT_DIR, PREFIX, python_major_minor_version
+from bypy.constants import SRC as CALIBRE_DIR
+from bypy.freeze import extract_extension_modules, fix_pycryptodome, freeze_python, is_package_dir, path_to_freeze_dir
+from bypy.utils import create_job, get_dll_path, mkdtemp, parallel_build, py_compile, run, walk
 
 j = os.path.join
 self_dir = os.path.dirname(os.path.abspath(__file__))
-arch = 'x86_64' if is64bit else 'i686'
-
+machine = (os.uname()[4] or '').lower()
+arch = 'x86_64'
+if machine.startswith('arm') or machine.startswith('aarch64'):
+    arch = 'arm64'
 py_ver = '.'.join(map(str, python_major_minor_version()))
 QT_PREFIX = os.path.join(PREFIX, 'qt')
 iv = globals()['init_env']
@@ -36,18 +33,27 @@ qt_get_dll_path = partial(get_dll_path, loc=os.path.join(QT_PREFIX, 'lib'))
 
 def binary_includes():
     return [
-        j(PREFIX, 'bin', x) for x in ('pdftohtml', 'pdfinfo', 'pdftoppm', 'optipng', 'JxrDecApp')] + [
+        j(PREFIX, 'bin', x) for x in ('pdftohtml', 'pdfinfo', 'pdftoppm', 'pdftotext', 'optipng', 'cwebp', 'JxrDecApp')] + [
 
         j(PREFIX, 'private', 'mozjpeg', 'bin', x) for x in ('jpegtran', 'cjpeg')] + [
         ] + list(map(
             get_dll_path,
             ('usb-1.0 mtp expat sqlite3 ffi z lzma openjp2 poppler dbus-1 iconv xml2 xslt jpeg png16'
-             ' webp webpmux webpdemux exslt ncursesw readline chm hunspell-1.7 hyphen'
-             ' icudata icui18n icuuc icuio stemmer gcrypt gpg-error'
+             ' webp webpmux webpdemux sharpyuv exslt ncursesw readline chm hunspell-1.7 hyphen'
+             ' icudata icui18n icuuc icuio stemmer gcrypt gpg-error uchardet graphite2'
+             ' brotlicommon brotlidec brotlienc zstd podofo ssl crypto tiff'
              ' gobject-2.0 glib-2.0 gthread-2.0 gmodule-2.0 gio-2.0 dbus-glib-1').split()
         )) + [
-            get_dll_path('podofo', 3), get_dll_path('bz2', 2), j(PREFIX, 'lib', 'libunrar.so'),
-            get_dll_path('ssl', 2), get_dll_path('crypto', 2), get_dll_path('python' + py_ver, 2),
+            # debian/ubuntu for for some typical stupid reason use libpcre.so.3
+            # instead of libpcre.so.0 like other distros. And Qt's idiotic build
+            # system links against this pcre library despite being told to use
+            # the bundled pcre. Since libpcre doesn't depend on anything other
+            # than libc and libpthread we bundle the Ubuntu one here
+            #glob.glob('/usr/lib/*/libpcre.so.3')[0],
+            glob.glob('/usr/lib/libpcre.so.1')[0],
+            get_dll_path('bz2', 2), j(PREFIX, 'lib', 'libunrar.so'),
+            get_dll_path('python' + py_ver, 2), get_dll_path('jbig', 2),
+
             # We dont include libstdc++.so as the OpenGL dlls on the target
             # computer fail to load in the QPA xcb plugin if they were compiled
             # with a newer version of gcc than the one on the build computer.
@@ -58,7 +64,7 @@ def binary_includes():
     ] + list(map(qt_get_dll_path, QT_DLLS))
 
 
-class Env(object):
+class Env:
 
     def __init__(self):
         self.src_root = CALIBRE_DIR
@@ -79,9 +85,8 @@ def ignore_in_lib(base, items, ignored_dirs=None):
     for name in items:
         path = j(base, name)
         if os.path.isdir(path):
-            if name in ignored_dirs or not os.path.exists(j(path, '__init__.py')):
-                if name != 'plugins':
-                    ans.append(name)
+            if name != 'plugins' and (name in ignored_dirs or not is_package_dir(path)):
+                ans.append(name)
         else:
             if name.rpartition('.')[-1] not in ('so', 'py'):
                 ans.append(name)
@@ -101,7 +106,7 @@ def import_site_packages(srcdir, dest):
                 src = os.path.abspath(j(srcdir, line))
                 if os.path.exists(src) and os.path.isdir(src):
                     import_site_packages(src, dest)
-        elif os.path.exists(j(f, '__init__.py')):
+        elif is_package_dir(f):
             shutil.copytree(f, j(dest, x), ignore=ignore_in_lib)
 
 
@@ -114,6 +119,8 @@ def copy_libs(env):
         os.chmod(j(
             dest, os.path.basename(x)),
             stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+    for x in ('ossl-modules',):
+        shutil.copytree(os.path.join(LIBDIR, x), os.path.join(env.lib_dir, x))
 
     base = j(QT_PREFIX, 'plugins')
     dest = j(env.lib_dir, '..', 'plugins')
@@ -150,7 +157,7 @@ def copy_python(env, ext_dir):
         elif os.path.isfile(c):
             shutil.copy2(c, j(dest, x))
     shutil.copytree(j(env.src_root, 'resources'), j(env.base, 'resources'))
-    for pak in glob.glob(j(QT_PREFIX, 'resources', '*.pak')):
+    for pak in glob.glob(j(QT_PREFIX, 'resources', '*')):
         shutil.copy2(pak, j(env.base, 'resources'))
     os.mkdir(j(env.base, 'translations'))
     shutil.copytree(j(QT_PREFIX, 'translations', 'qtwebengine_locales'), j(env.base, 'translations', 'qtwebengine_locales'))
@@ -282,7 +289,7 @@ def create_tarfile(env, compression_level='9'):
     if "x86_64"  in archname:
         arch = 'x86_64'
 #
-    #dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'],
+    #dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))    
     dist = os.path.join(base, '%s-%s-%s.musl.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))
     with tarfile.open(dist, mode='w', format=tarfile.PAX_FORMAT) as tf:
         cwd = os.getcwd()
@@ -295,7 +302,7 @@ def create_tarfile(env, compression_level='9'):
     print('Compressing archive...')
     ans = dist.rpartition('.')[0] + '.txz'
     start_time = time.time()
-    subprocess.check_call(['xz', '--threads=0', '-f', '-' + compression_level, dist])
+    subprocess.check_call(['xz', '--verbose', '--threads=0', '-f', '-' + compression_level, dist])
     secs = time.time() - start_time
     print('Compressed in %d minutes %d seconds' % (secs // 60, secs % 60))
     os.rename(dist + '.xz', ans)

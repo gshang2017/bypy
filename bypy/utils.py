@@ -13,21 +13,24 @@ import shlex
 import shutil
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import zipfile
-from contextlib import closing, contextmanager
-from functools import partial
+from contextlib import closing, contextmanager, suppress
+from functools import partial, lru_cache
 
-from .constants import (CMAKE, LIBDIR, MAKEOPTS, NMAKE, PATCHES, PREFIX,
-                        PYTHON, build_dir, cpu_count, is64bit, islinux,
-                        ismacos, iswindows, mkdtemp,
-                        python_major_minor_version, worker_env)
+from .constants import (
+    BIN, CMAKE, LIBDIR, MAKEOPTS, NMAKE, NODEJS, PATCHES, PERL, PREFIX, PYTHON,
+    SH, UNIVERSAL_ARCHES, build_dir, cpu_count, current_build_arch,
+    currently_building_dep, is64bit, is_cross_half_of_lipo_build, islinux,
+    ismacos, iswindows, mkdtemp, python_major_minor_version, worker_env
+)
 
 if iswindows:
-    import msvcrt
     from ctypes import wintypes
     k32 = ctypes.windll.kernel32
     get_file_type = k32.GetFileType
@@ -55,7 +58,9 @@ if iswindows:
         x = x.replace('\\', '\\\\')
         return shlex.split(x)
 else:
-    rmtree = shutil.rmtree
+
+    def rmtree(x, tries=10):
+        shutil.rmtree(x)
     split = shlex.split
 
 
@@ -64,8 +69,10 @@ ensure_dir = partial(os.makedirs, exist_ok=True)
 
 
 def print_cmd(cmd):
+    end = '\n'
     print('\033[92m', end='')
-    print(*cmd, end='\033[0m\n')
+    end = '\033[m' + end
+    print(*cmd, end=end, flush=True)
 
 
 def call(*cmd, echo=True):
@@ -80,21 +87,81 @@ def call(*cmd, echo=True):
         raise SystemExit(ret)
 
 
-def single_instance(name):
-    import fcntl
-    address = '\0' + name.replace(' ', '_')
-    sock = socket.socket(family=socket.AF_UNIX)
-    try:
-        sock.bind(address)
-    except socket.error as err:
-        if getattr(err, 'errno', None) == errno.EADDRINUSE:
+if ismacos:
+    def _clean_lock_file(file_obj):
+        with suppress(OSError):
+            os.remove(file_obj.name)
+        with suppress(OSError):
+            file_obj.close()
+
+    def single_instance(name):
+        import fcntl
+        path = os.path.realpath(f'/tmp/si-lock-{name.replace(" ", "_")}')
+        f = open(path, 'w')
+        try:
+            fcntl.lockf(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as err:
+            f.close()
+            if err.errno not in (errno.EAGAIN, errno.EACCES):
+                raise
             return False
-        raise
-    fd = sock.fileno()
-    old_flags = fcntl.fcntl(fd, fcntl.F_GETFD)
-    fcntl.fcntl(fd, fcntl.F_SETFD, old_flags | fcntl.FD_CLOEXEC)
-    atexit.register(sock.close)
-    return True
+        else:
+            atexit.register(_clean_lock_file, f)
+            return True
+elif iswindows:
+    import ctypes
+    from ctypes import wintypes
+
+    def handlecheck(result, func, args):
+        if result == INVALID_HANDLE_VALUE:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return result
+
+    CreateMutexW = ctypes.windll.kernel32.CreateMutexW
+    CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPWSTR]
+    CreateMutexW.restype = wintypes.HANDLE
+    CreateMutexW.errcheck = handlecheck
+    CloseHandle = ctypes.windll.kernel32.CloseHandle
+    CloseHandle.argtypes = [wintypes.HANDLE]
+    CloseHandle.restype = wintypes.BOOL
+    INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
+    ERROR_ALREADY_EXISTS = 0xB7
+
+    def single_instance(name):
+        q = f'bypy_si_{name.replace(" ", "_")}'
+        try:
+            h = CreateMutexW(None, False, q)
+        except OSError as err:
+            if err.winerror == ERROR_ALREADY_EXISTS:
+                return False
+            raise
+        atexit.register(CloseHandle, h)
+        return True
+else:
+    def single_instance(name):
+        import fcntl
+        address = '\0' + name.replace(' ', '_')
+        sock = socket.socket(family=socket.AF_UNIX)
+        try:
+            sock.bind(address)
+        except socket.error as err:
+            if getattr(err, 'errno', None) == errno.EADDRINUSE:
+                return False
+            raise
+        fd = sock.fileno()
+        old_flags = fcntl.fcntl(fd, fcntl.F_GETFD)
+        fcntl.fcntl(fd, fcntl.F_SETFD, old_flags | fcntl.FD_CLOEXEC)
+        atexit.register(sock.close)
+        return True
+
+
+def atomic_write(path, data):
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    path = os.path.abspath(path)
+    with tempfile.NamedTemporaryFile(dir=os.path.dirname(path), delete=False) as tf:
+        tf.write(data)
+    os.replace(tf.name, path)
 
 
 def current_env(library_path=False):
@@ -106,54 +173,37 @@ def current_env(library_path=False):
         else:
             library_path = library_path + os.pathsep + LIBDIR
         env['LD_LIBRARY_PATH'] = library_path
+    if ismacos:
+        # Sanitize homebrew gunk
+        for k in tuple(env):
+            if k.startswith('HOMEBREW'):
+                del env[k]
+        env['PATH'] = ':'.join(x for x in env['PATH'].split(':') if 'homebrew' not in x)
     return env
 
 
-def isatty():
-    if isatty.no_tty:
-        return False
-    f = sys.stdout
-    if f.isatty():
-        return True
-    if not iswindows:
-        return False
-    # Check for a cygwin ssh pipe
-    buf = ctypes.create_string_buffer(1024)
-    h = msvcrt.get_osfhandle(f.fileno())
-    if get_file_type(h) != 3:
-        return False
-    ret = get_file_info_by_handle(h, 2, buf, ctypes.sizeof(buf))
-    if not ret:
-        raise ctypes.WinError()
-    data = buf.raw
-    name = data[4:].decode('utf-16').rstrip(u'\0')
-    parts = name.split('-')
-    return (
-        parts[0] == r'\cygwin' and parts[2].startswith('pty') and
-        parts[4] == 'master')
-
-
-isatty.no_tty = False
-
-
 def set_title(x):
-    if isatty():
-        print('''\033]2;%s\007''' % x)
+    print('''\033]2;%s\007''' % x)
 
 
 def run_shell(library_path=False, cwd=None, env=None):
     sys.stderr.flush(), sys.stdout.flush()
-    if not isatty():
-        raise SystemExit('STDOUT is not a tty, aborting...')
-    sh = 'C:/cygwin64/bin/zsh' if iswindows else '/bin/zsh'
     env = env or current_env(library_path=library_path)
+    cmd = [SH]
+    if cwd and not os.path.isdir(cwd):
+        cwd = None
     if iswindows:
         from .constants import cygwin_paths
         paths = env['PATH'].split(os.pathsep)
         paths = paths + cygwin_paths
         env['PATH'] = os.pathsep.join(paths)
+        sys.stdout.write('\x1b[?1l')
+        sys.stdout.flush()
+        cmd += ['-i']  # -l causes shell to change cwd to $HOME
+    else:
+        cmd += ['-il']
     try:
-        return subprocess.Popen([sh, '-i'], env=env, cwd=cwd).wait()
+        return subprocess.Popen(cmd, env=env, cwd=cwd).wait()
     except KeyboardInterrupt:
         return 0
 
@@ -176,8 +226,16 @@ def run(*args, **kw):
     env.update(kw.get('env', {}))
     append_to_path = kw.get('append_to_path')
     if append_to_path:
+        if isinstance(append_to_path, str):
+            append_to_path = append_to_path.split(os.pathsep)
         env['PATH'] = os.pathsep.join(
-            env['PATH'].split(os.pathsep) + append_to_path.split(os.pathsep))
+            env['PATH'].split(os.pathsep) + list(append_to_path))
+    prepend_to_path = kw.get('prepend_to_path')
+    if prepend_to_path:
+        if isinstance(prepend_to_path, str):
+            prepend_to_path = prepend_to_path.split(os.pathsep)
+        env['PATH'] = os.pathsep.join(list(prepend_to_path) + env['PATH'].split(
+            os.pathsep))
     stdout = subprocess.PIPE if kw.get('get_output') else None
     stdin = subprocess.PIPE if kw.get('stdin') else None
     p = subprocess.Popen(
@@ -238,12 +296,34 @@ def install_package(pkg_path, dest_dir):
 
 
 def extract(source, path='.'):
-    if source.lower().endswith('.zip'):
+    q = source.lower()
+    if q.endswith('.zip'):
         with zipfile.ZipFile(source) as zf:
             zf.extractall(path)
+    elif q.endswith('.whl'):
+        shutil.copy2(source, os.path.join(path, os.path.basename(source)))
+        os.symlink(os.path.basename(source), 'wheel')
     else:
         with tarfile.open(source, encoding='utf-8') as tf:
-            tf.extractall(path)
+            def is_within_directory(directory, target):
+
+                abs_directory = os.path.abspath(directory)
+                abs_target = os.path.abspath(target)
+
+                prefix = os.path.commonprefix([abs_directory, abs_target])
+
+                return prefix == abs_directory
+
+            def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+
+                for member in tar.getmembers():
+                    member_path = os.path.join(path, member.name)
+                    if not is_within_directory(path, member_path):
+                        raise Exception("Attempted Path Traversal in Tar File")
+
+                tar.extractall(path, members, numeric_owner=numeric_owner)
+
+            safe_extract(tf, path)
 
 
 def chdir_for_extract(name):
@@ -267,71 +347,141 @@ def extract_source_and_chdir(source):
     return tdir
 
 
-def relocate_pkgconfig_files():
+def relocate_pkgconfig_files(prefix=PREFIX):
     for path in walk(build_dir()):
         if path.endswith('.pc'):
             if re.search(
-                    f'^prefix={PREFIX}$', open(path).read(),
+                    f'^prefix={prefix}$', open(path).read(),
                     flags=re.M) is None:
-                replace_in_file(path, build_dir(), PREFIX)
+                replace_in_file(path, build_dir().replace(os.sep, '/'), prefix.replace(
+                    os.sep, '/'))
+        if path.endswith('.cmake'):
+            if build_dir() in open(path).read():
+                replace_in_file(path, build_dir(), prefix)
 
 
 def simple_build(
-        configure_args=(), make_args=(), install_args=(),
-        library_path=None, override_prefix=None, no_parallel=False,
-        configure_name='./configure', relocate_pkgconfig=True,
-        autogen_name='./autogen.sh'
+    configure_args=(), make_args=(), install_args=(),
+    library_path=None, override_prefix=None, no_parallel=False,
+    configure_name='./configure', relocate_pkgconfig=True,
+    autogen_name='./autogen.sh', do_install=True,
+    use_envvars_for_lipo=False, prepend_to_path=None, env=None,
 ):
     if isinstance(configure_args, str):
         configure_args = split(configure_args)
+    else:
+        configure_args = list(configure_args)
     if isinstance(make_args, str):
         make_args = split(make_args)
     if isinstance(install_args, str):
         install_args = split(install_args)
-    if not os.path.exists(configure_name) and os.path.exists(autogen_name):
+    if configure_name and not os.path.exists(configure_name) and os.path.exists(autogen_name):
         run(autogen_name)
-    run(configure_name, '--prefix=' + (
-        override_prefix or build_dir()), *configure_args)
+    env = env or {}
+    if is_cross_half_of_lipo_build():
+        flags = f'{worker_env["CFLAGS"]} -arch {current_build_arch()}'
+        ldflags = f'{worker_env["LDFLAGS"]} -arch {current_build_arch()}'
+        if use_envvars_for_lipo:
+            env.update({'CFLAGS': flags, 'CXXFLAGS': flags, 'LDFLAGS': ldflags,})
+        else:
+            host = 'aarch64' if 'arm' in current_build_arch() else 'x86_64'
+            build = 'aarch64' if 'arm' in UNIVERSAL_ARCHES[0] else 'x86_64'
+            configure_args += [
+                f'--build={build}-apple-darwin', f'--host={host}-apple-darwin',
+                f'CXXFLAGS={flags}', f'CFLAGS={flags}', f'LDFLAGS={ldflags}',
+            ]
+    if configure_name:
+        run(configure_name, '--prefix=' + (
+            override_prefix or build_dir()), *configure_args, env=env, prepend_to_path=prepend_to_path)
     make_opts = [] if no_parallel else split(MAKEOPTS)
     run('make', *(make_opts + list(make_args)))
-    mi = ['make'] + list(install_args) + ['install']
-    run(*mi, library_path=library_path)
-    if relocate_pkgconfig:
-        relocate_pkgconfig_files()
+    if do_install:
+        mi = ['make'] + list(install_args) + ['install']
+        run(*mi, library_path=library_path)
+        if relocate_pkgconfig:
+            relocate_pkgconfig_files()
 
 
-def qt_build(qmake_args='', for_webengine=False, **env):
+def qt_build(configure_args='', for_webengine=False, **env):
+    # To get configure args run qt-configure-module . -help in the module
+    # source dir
     os.mkdir('build')
     os.chdir('build')
-    qmake_args = shlex.split(qmake_args)
-    append_to_path = None
+    append_to_path = [os.path.join(PREFIX, 'qt', 'bin'), BIN]
+    prepend_to_path = []
+    qcm = os.path.join(PREFIX, 'qt', 'bin', 'qt-configure-module')
     if iswindows:
-        append_to_path = os.path.dirname(os.environ['PYTHON_TWO'])
+        qcm += '.bat'
+    run(qcm, '..', '-help',
+        append_to_path=append_to_path, library_path=True)
+    run(qcm, '..', '-list-features',
+        append_to_path=append_to_path, library_path=True)
+    if iswindows:
+        prepend_to_path.append(os.path.dirname(PERL))
+        append_to_path.append(os.path.dirname(os.environ['PYTHON_TWO']))
         if for_webengine:
-            append_to_path = f'{PREFIX}/private/gnuwin32/bin;{append_to_path}'
+            append_to_path.insert(0, f'{PREFIX}/private/gnuwin32/bin')
+            append_to_path.append(os.path.dirname(NODEJS))
+        if currently_building_dep()['name'] == 'qt-imageformats':
+            # the qt tiff cmake file as broken so give up on system tiff
+            configure_args += ' -qt-tiff'
+    if ismacos:
+        env['PYTHON3_PATH'] = os.path.dirname(os.path.abspath(sys.executable))
+    if for_webengine:
+        pass  # configure_args += ' -no-feature-webengine-jumbo-build'
     run(
-        os.path.join(PREFIX, 'qt', 'bin', 'qmake'),
-        '..', '--', *qmake_args,
-        library_path=True, append_to_path=append_to_path, **env)
-    if iswindows:
-        if for_webengine:
-            os.mkdir('process')
-        run(f'"{NMAKE}"', append_to_path=append_to_path, **env)
-        iroot = build_dir()[2:]
-        run(f'"{NMAKE}" INSTALL_ROOT={iroot} install')
-    else:
-        run('make ' + MAKEOPTS, library_path=True, **env)
-        run(f'make INSTALL_ROOT={build_dir()} install')
-    base = os.path.relpath(PREFIX, '/')
-    os.rename(
-        os.path.join(build_dir(), base, 'qt'), os.path.join(build_dir(), 'qt'))
+        qcm, '..', *shlex.split(configure_args.strip()),
+        library_path=True, append_to_path=append_to_path or None,
+        env=env, prepend_to_path=prepend_to_path or None,
+    )
+    cmd = [CMAKE, '--build', '.', '--parallel']
+    if for_webengine:
+        # ninja by default creates cpu_count + 2 jobs, max RAM per job is thus
+        # RAM/num_jobs. Linking webengine requires several GB of RAM -- ka blammo
+        ram = total_physical_ram()
+        num = 4
+        print(f'Limiting parallelism to {num} workers with {ram/(1024**3)} GB of total physical RAM')
+        for f in walk('.'):
+            ext = f.rpartition('.')[2].lower()
+            if ext in ('ninja', 'py', 'bat', 'json', 'sh', 'cc'):
+                replace_in_file(
+                    f, 'ninja -C', f'ninja -j {num} -C', missing_ok=True)
+    run(*cmd, library_path=True, append_to_path=append_to_path, env=env)
+    run(CMAKE, '--install', '.', '--prefix', f'{build_dir()}/qt', env=env)
+    relocate_pkgconfig_files(prefix=PREFIX + '/qt')
+    # if iswindows:
+    #     if for_webengine:
+    #         os.mkdir('process')
+    #     run(f'"{NMAKE}"', append_to_path=append_to_path, **env)
+    #     iroot = build_dir()[2:]
+    #     run(f'"{NMAKE}" INSTALL_ROOT={iroot} install')
+    # else:
+    #     run('make ' + MAKEOPTS, library_path=True, **env)
+    #     run(f'make INSTALL_ROOT={build_dir()} install')
+    # base = os.path.relpath(PREFIX, '/')
+    # os.rename(
+    #     os.path.join(build_dir(), base, 'qt'), os.path.join(build_dir(), 'qt'))
+
+
+FAT_MAGIC_BE = struct.pack('>I',    0xcafe_babe)
+FAT_MAGIC_LE = struct.pack('<I',    0xcafe_babe)
+FAT_MAGIC_64_BE = struct.pack('>I', 0xcafe_babf)
+FAT_MAGIC_64_LE = struct.pack('<I', 0xcafe_babf)
+MH_MAGIC_BE = struct.pack('>I',     0xfeed_face)
+MH_MAGIC_LE = struct.pack('<I',     0xfeed_face)
+MH_MAGIC_64_BE = struct.pack('>I',  0xfeed_facf)
+MH_MAGIC_64_LE = struct.pack('<I',  0xfeed_facf)
+MACH_MAGICS = (
+    FAT_MAGIC_BE, FAT_MAGIC_LE, FAT_MAGIC_64_BE, FAT_MAGIC_64_LE,
+    MH_MAGIC_BE, MH_MAGIC_LE, MH_MAGIC_64_BE, MH_MAGIC_64_LE
+)
 
 
 def is_macho_binary(p):
     try:
         with open(p, 'rb') as f:
-            return f.read(4) in (b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf')
-    except FileNotFoundError:
+            return f.read(4) in MACH_MAGICS
+    except (FileNotFoundError, IsADirectoryError):
         return False
 
 
@@ -411,42 +561,79 @@ def fix_install_names(m, output_dir):
             change_lib_names(p, changes)
 
 
-def python_build(extra_args=()):
+def python_build(extra_args=(), ignore_dependencies=False):
     if isinstance(extra_args, str):
         extra_args = split(extra_args)
-    run(PYTHON, 'setup.py', 'install', '--root', build_dir(),
-        *extra_args, library_path=True)
+    if os.path.exists('wheel') and not (os.path.exists('setup.py') or os.path.exists('pyproject.toml')):
+        return wheel_build()
+    extra_args = [f'--config-setting={x}' for x in extra_args]
+    if ignore_dependencies:
+        extra_args.append('--skip-dependency-check')
+    run(PYTHON, '-m', 'build', '--wheel', '--no-isolation', *extra_args, library_path=True)
+    whl = glob.glob('dist/*.whl')[0]
+    os.symlink(whl, 'wheel')
+    wheel_build()
 
 
-def python_prefix():
-    current_output_dir = build_dir()
-    relpath = os.path.relpath(PREFIX, '/')
-    return os.path.join(current_output_dir, relpath)
+def wheel_build():
+    run(PYTHON, '-m', 'installer', '--no-compile-bytecode', '--prefix', build_dir(), os.path.realpath('wheel'), library_path=True)
 
 
-def python_install(add_scripts=False):
+@lru_cache
+def relpath_to_site_packages():
+    import json
+    ans = json.loads(run(PYTHON, '-c', 'import site, json; print(json.dumps(site.getsitepackages()))', library_path=True, get_output=True))
+    ans = tuple(x for x in ans if x.endswith('site-packages'))[0]
+    return os.path.relpath(ans, PREFIX)
+
+
+def python_install():
     ddir = 'python' if ismacos else 'private' if iswindows else 'lib'
-    pp = python_prefix()
-    to_remove = os.listdir(build_dir())[0]
-    os.rename(os.path.join(pp, ddir), os.path.join(build_dir(), ddir))
-    if add_scripts:
-        if ismacos:
-            major, minor = python_major_minor_version()
-            os.rename(
-                os.path.join(
-                    build_dir(), ddir,
-                    f'Python.framework/Versions/{major}.{minor}/bin'),
-                os.path.join(build_dir(), 'bin'))
-        elif iswindows:
-            os.rename(os.path.join(build_dir(), ddir, 'python', 'Scripts'),
-                      os.path.join(build_dir(), 'bin'))
+    contents = os.listdir(build_dir())
+    if ismacos:
+        major, minor = python_major_minor_version()
+        framework = os.path.join(
+            build_dir(), ddir, f'Python.framework/Versions/{major}.{minor}')
+    elif iswindows:
+        framework = os.path.join(build_dir(), f'{ddir}/python')
+
+    if ismacos and 'lib' in contents:
+        os.makedirs(framework, exist_ok=True)
+        os.rename(os.path.join(build_dir(), 'lib'), f'{framework}/lib')
+    elif iswindows:
+        if ('Lib' in contents or 'lib' in contents):
+            os.makedirs(framework, exist_ok=True)
+            os.rename(os.path.join(build_dir(), 'lib'), f'{framework}/Lib')
         else:
-            ddir = 'bin'
-            os.rename(os.path.join(pp, ddir), os.path.join(build_dir(), ddir))
-    rmtree(os.path.join(build_dir(), to_remove))
+            base = os.path.join(build_dir(), PREFIX.partition(os.sep)[2])
+            q = os.path.join(base, os.path.relpath(framework, build_dir()))
+            if os.path.exists(q):
+                for x in os.listdir(base):
+                    os.rename(os.path.join(base, x), os.path.join(build_dir(), x))
+                shutil.rmtree(os.path.join(build_dir(), PREFIX.partition(os.sep)[2].partition(os.sep)[0]))
+
+    if ismacos and 'Library' in contents:
+        # python 3.9 changes how it builds things, yet again
+        os.rename(
+            os.path.join(build_dir(), 'Library', 'Frameworks'),
+            os.path.join(build_dir(), ddir))
+    # Handle scripts
+    bdir = ''
+    if ismacos:
+        bdir = os.path.join(framework, 'bin')
+    elif iswindows:
+        bdir = os.path.join(build_dir(), 'Scripts')
+    if bdir and os.path.exists(bdir):
+        os.rename(bdir, os.path.join(build_dir(), 'bin'))
 
 
-def create_package(module, src_dir, outpath):
+def get_arches_in_binary(path):
+    x = subprocess.check_output([
+        'lipo', '-archs', path]).decode('utf-8').strip()
+    return {y for y in x.split()}
+
+
+def create_package(module, outpath):
 
     exclude = getattr(module, 'pkg_exclude_names', set(
         'doc man info test tests gtk-doc README'.split()))
@@ -457,12 +644,15 @@ def create_package(module, src_dir, outpath):
     if hasattr(module, 'modify_exclude_extensions'):
         module.modify_exclude_extensions(exclude_extensions)
 
-    try:
+    with suppress(FileNotFoundError):
         shutil.rmtree(outpath)
-    except FileNotFoundError:
-        pass
 
     os.makedirs(outpath)
+    check_universal_binaries = ismacos and len(
+        UNIVERSAL_ARCHES) > 1 and not getattr(
+            module, 'allow_non_universal', False)
+    dylibs = set()
+    src_dir = build_dir()
 
     for dirpath, dirnames, filenames in os.walk(src_dir):
 
@@ -496,6 +686,12 @@ def create_package(module, src_dir, outpath):
             else:
                 dirnames.remove(d)
 
+        if hasattr(module, 'is_ok_to_check_universal_arches'):
+            is_ok_to_check_universal_arches = module.is_ok_to_check_universal_arches
+        else:
+            def always_ok(x):
+                return True
+            is_ok_to_check_universal_arches = always_ok
         for f in filenames:
             name = get_name(f)
             if is_ok(name):
@@ -503,6 +699,21 @@ def create_package(module, src_dir, outpath):
                 # built in tmpfs and outpath is on a different volume
                 lcopy(os.path.join(dirpath, f), os.path.join(outpath, name),
                       no_hardlinks=islinux)
+                full_path = os.path.realpath(os.path.join(outpath, name))
+                if check_universal_binaries and full_path not in dylibs and (
+                        name.endswith('.dylib') or is_macho_binary(
+                            full_path)) and is_ok_to_check_universal_arches(full_path):
+                    dylibs.add(full_path)
+    expected = set(UNIVERSAL_ARCHES)
+    for x in dylibs:
+        arches = get_arches_in_binary(x)
+        if arches != expected:
+            print(
+                f'The file {x} is not a universal binary.'
+                f' Copied from {src_dir}.'
+                f' It only has arches: {arches}', file=sys.stderr)
+            shutil.rmtree(outpath)
+            raise SystemExit('Failed to build universal binary')
 
 
 @contextmanager
@@ -616,7 +827,7 @@ def timeit():
 def windows_cmake_build(
         headers=None, binaries=None, libraries=None, header_dest='include',
         nmake_target='', make=NMAKE, **kw):
-    os.mkdir('build')
+    os.makedirs('build', exist_ok=True)
     defs = {'CMAKE_BUILD_TYPE': 'Release'}
     cmd = [CMAKE, '-G', "NMake Makefiles"]
     for d, val in kw.items():
@@ -665,8 +876,8 @@ def windows_sdk_paths():
 
 def msbuild(proj, *args, configuration='Release', **env):
     global worker_env
-    from bypy.vcvars import find_msbuild
     from bypy.constants import vcvars_env
+    from bypy.vcvars import find_msbuild
     PL = 'x64' if is64bit else 'Win32'
     sdk = get_windows_sdk()
     orig_worker_env = worker_env.copy()
@@ -686,20 +897,44 @@ def msbuild(proj, *args, configuration='Release', **env):
 
 
 def cmake_build(
-        make_args=(), install_args=(),
-        library_path=None, override_prefix=None, no_parallel=False,
-        relocate_pkgconfig=True, append_to_path=None, env=None,
-        **kw
+    make_args=(), install_args=(),
+    library_path=None, override_prefix=None, no_parallel=False,
+    relocate_pkgconfig=True, append_to_path=None, env=None,
+    **kw
 ):
     make = NMAKE if iswindows else 'make'
     if isinstance(make_args, str):
         make_args = shlex.split(make_args)
-    os.mkdir('build')
+    try:
+        os.mkdir('build')
+    except FileExistsError:
+        # brotli has BUILD file in its root which on case insensitive
+        # filesystems causes prevents creation of build folder
+        try:
+            os.remove('build')
+        except (IsADirectoryError, PermissionError):
+            pass
+        else:
+            os.mkdir('build')
+    os.makedirs('build', exist_ok=True)
     defs = {
         'CMAKE_BUILD_TYPE': 'RELEASE',
-        'CMAKE_PREFIX_PATH': PREFIX,
+        'CMAKE_SYSTEM_PREFIX_PATH': PREFIX,
         'CMAKE_INSTALL_PREFIX': override_prefix or build_dir(),
     }
+    if ismacos:
+        defs.update({
+            # tell cmake to use our zlib
+            'CMAKE_POLICY_DEFAULT_CMP0074': 'NEW',
+            'ZLIB_ROOT': PREFIX,
+            'OPENSSL_ROOT_DIR': PREFIX,
+        })
+
+    if len(UNIVERSAL_ARCHES) > 1 and ismacos:
+        if current_build_arch():
+            defs['CMAKE_OSX_ARCHITECTURES'] = current_build_arch()
+        else:
+            defs['CMAKE_OSX_ARCHITECTURES'] = ';'.join(UNIVERSAL_ARCHES)
     if iswindows:
         cmd = [CMAKE, '-G', "NMake Makefiles"]
     else:
@@ -713,6 +948,7 @@ def cmake_build(
         cmd.append('-D' + k + '=' + v)
     cmd.append('..')
     env = env or {}
+    env['CMAKE_PREFIX_PATH'] = PREFIX
     run(*cmd, cwd='build', append_to_path=append_to_path, env=env)
     make_opts = []
     if not iswindows:
@@ -773,6 +1009,17 @@ def apply_patch(name, level=0, reverse=False, convert_line_endings=False):
     run(*args)
 
 
+def apply_patches(prefix, level=1, reverse=False, convert_line_endings=False):
+    applied = False
+    for p in sorted(glob.glob(os.path.join(PATCHES, prefix + '*.patch'))):
+        print('Applying patch:', os.path.basename(p))
+        apply_patch(p, level=level, reverse=reverse,
+                    convert_line_endings=convert_line_endings)
+        applied = True
+    if not applied:
+        raise ValueError('Failed to find any patches with prefix: ' + prefix)
+
+
 def install_tree(src, dest_parent='include', ignore=None):
     dest_parent = os.path.join(build_dir(), dest_parent)
     dst = os.path.join(dest_parent, os.path.basename(src))
@@ -821,18 +1068,23 @@ def parallel_build(jobs, log=print, verbose=True):
         return True
 
 
-def py_compile(basedir):
+def py_compile(basedir, optimization_level='-OO'):
     version = python_major_minor_version()[0]
     if version < 3:
         run(
-            PYTHON, '-OO', '-m', 'compileall', '-d', '', '-f', '-q',
-            basedir, library_path=True)
+            PYTHON, optimization_level, '-m', 'compileall', '-d', '', '-f',
+            '-q', basedir, library_path=True)
         clean_exts = ('py', 'pyc')
     else:
-        run(
-            PYTHON, '-OO', '-m', 'compileall', '-d', '', '-f', '-q',
-            '-b', '-j', '0', '--invalidation-mode=unchecked-hash',
-            basedir, library_path=True)
+        cmd = (
+            PYTHON, optimization_level, '-m', 'compileall', '-d', '', '-f', '-q', '-b',
+            '-j', '0', '--invalidation-mode=unchecked-hash', basedir)
+        try:
+            run(*cmd, library_path=True)
+        except Exception:
+            print('py_compile failed, retrying', file=sys.stderr)
+            run(*cmd, library_path=True)
+
         clean_exts = ('py',)
 
     for f in walk(basedir):
@@ -845,14 +1097,15 @@ def get_dll_path(base, levels=1, loc=LIBDIR):
     pat = f'lib{base}.so.*'
     candidates = tuple(glob.glob(os.path.join(loc, pat)))
     if not candidates:
-        candidates = glob.glob(os.path.join(loc, '*', pat))
+        candidates = sorted(
+            glob.glob(os.path.join(loc, '*', pat)), reverse=True)
 
     for x in candidates:
         q = os.path.basename(x)
         q = q[q.rfind('.so.'):][4:].split('.')
         if len(q) == levels:
             return x
-    raise ValueError(f'Could not find library for base name: {base}')
+    raise ValueError(f'Could not find library for base name: {base} with candidates: {" ".join(candidates)}')
 
 
 def dos2unix(path):
@@ -860,3 +1113,161 @@ def dos2unix(path):
         raw = f.read().replace(b'\r\n', b'\n')
     with open(path, 'wb') as f:
         f.write(raw)
+
+
+def binaries_in(base):
+    base = os.path.abspath(os.path.realpath(base))
+    for x in walk(base):
+        x = os.path.realpath(x)
+        if x.endswith('.dylib') or is_macho_binary(x):
+            yield os.path.relpath(os.path.abspath(x), base)
+
+
+def lipo(output_dirs):
+    output_dir = build_dir()
+    binary_collections = set()
+    for xa, x in output_dirs:
+        binary_collections.add(frozenset(binaries_in(x)))
+    if len(binary_collections) > 1:
+        raise SystemExit(
+            'The set of binaries is different across different'
+            ' target architectures, cannot lipo them')
+    binaries = tuple(binary_collections)[0]
+    install_package(output_dirs[0][1], output_dir)
+
+    for binary in binaries:
+        dst = os.path.join(output_dir, binary)
+        if os.path.exists(dst):
+            os.remove(dst)
+        cmd = ['lipo']
+        all_arches = []
+        for arch, x in output_dirs:
+            all_arches.append(arch)
+            cmd.extend(('-arch', arch, os.path.join(x, binary)))
+            run('file', os.path.join(x, binary))
+        cmd += ['-create', '-output', dst]
+        run(*cmd)
+        cmd = ['lipo', dst, '-verify_arch'] + all_arches
+        run(*cmd)
+
+
+def setup_program_parser(pa):
+    a = pa.add_argument
+    a('--dont-strip',
+      default=False,
+      action='store_true',
+      help='Dont strip the binaries when building')
+    a('--compression-level',
+      default='9',
+      choices=list('123456789'),
+      help='Level of compression for the Linux tarball and windows msi.'
+      'For windows 1 is no compression, 2 is low compression, 3 is medium, 4 is mszip and anything higher is high')
+    a('--skip-tests',
+      default=False,
+      action='store_true',
+      help='Skip the tests when building')
+    a('--sign-installers',
+      default=False,
+      action='store_true',
+      help='Sign the binary installer, needs signing keys in the VMs')
+    a('--notarize',
+      default=False,
+      action='store_true',
+      help='Send the app for notarization to the platform vendor')
+    a('--non-interactive',
+      default=False,
+      action='store_true',
+      help='Do not run a shell if building fails')
+    a('--build-only',
+      help='Build only a single extension module when building'
+      ' program, useful for development')
+    a('--extra-program-data',
+      help='Extra data to pass to the program specific build code')
+
+
+def cmdline_for_program(args):
+    ans = ['program', '--compression-level', args.compression_level]
+    for x in (
+        'dont_strip', 'skip_tests', 'sign_installers', 'notarize', 'non_interactive',
+    ):
+        if getattr(args, x):
+            ans.append('--' + x.replace('_', '-'))
+    if args.build_only:
+        ans.extend(('--build-only', args.build_only))
+    if args.extra_program_data:
+        ans.extend(('--extra-program-data', args.extra_program_data))
+    return ans
+
+
+def setup_dependencies_parser(p):
+    from .download_sources import read_deps
+    try:
+        deps = read_deps()
+    except FileNotFoundError:
+        deps = ()
+    choices = (x['name'] for x in deps)
+    p.add_argument(
+        'dependencies', nargs='*',
+        help='The dependencies to build. If none are specified missing dependencies' +
+        ' only are built. Available deps:' +
+        ' '.join(choices)
+    )
+
+
+def cmdline_for_dependencies(args):
+    return ['dependencies'] + args.dependencies
+
+
+def setup_build_parser(p):
+    s = p.add_subparsers(dest='action', required=True)
+    sp = s.add_parser('shell', help='Open a shell in the build VM')
+    sp.add_argument(
+        '--full', action='store_true',
+        help='Create a full shell environment with all packages installed and synced')
+    sp.add_argument(
+        '--from-vm', action='store_true',
+        help='After the shell exits sync data from the vm')
+
+    pa = s.add_parser('program', help='Build the actual program')
+    setup_program_parser(pa)
+    s.add_parser('shutdown', help='Shutdown the VM', aliases=['halt', 'poweroff'])
+
+    setup_dependencies_parser(s.add_parser('dependencies', aliases=['deps']))
+    return s
+
+
+def total_physical_ram():
+    if islinux:
+        with open('/proc/meminfo') as f:
+            raw = f.read()
+        return int(re.search(r'^MemTotal:\s+(\d+)', raw, flags=re.M).group(1)) * 1024
+    if ismacos:
+        raw = subprocess.check_output(['sysctl', 'hw.memsize']).decode()
+        return int(raw.strip().split()[-1])
+    from ctypes import Structure, byref, sizeof, windll
+    from ctypes.wintypes import DWORD, ULARGE_INTEGER
+
+    class MEMORYSTATUSEX(Structure):
+        _fields_ = [
+            ('dwLength', DWORD),
+            ('dwMemoryLoad', DWORD),
+            ('ullTotalPhys', ULARGE_INTEGER),
+            ('ullAvailPhys', ULARGE_INTEGER),
+            ('ullTotalPageFile', ULARGE_INTEGER),
+            ('ullAvailPageFile', ULARGE_INTEGER),
+            ('ullTotalVirtual', ULARGE_INTEGER),
+            ('ullAvailVirtual', ULARGE_INTEGER),
+            ('ullAvailExtendedVirtual', ULARGE_INTEGER),
+        ]
+
+    def GlobalMemoryStatusEx():
+        x = MEMORYSTATUSEX()
+        x.dwLength = sizeof(x)
+        windll.kernel32.GlobalMemoryStatusEx(byref(x))
+        return x
+    return GlobalMemoryStatusEx().ullTotalPhys
+
+
+def require_ram(gb=4):
+    if total_physical_ram() < (gb * 1024**3):
+        raise SystemExit(f'Need at least {gb}GB of RAM to build')

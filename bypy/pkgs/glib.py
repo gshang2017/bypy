@@ -3,19 +3,18 @@
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 import os
-from bypy.constants import LIBDIR, PREFIX
-from bypy.utils import meson_build, ModifiedEnv, apply_patch
+
+from bypy.constants import BIN, LIBDIR, PREFIX
+from bypy.utils import ModifiedEnv, meson_build
 
 
 def main(args):
     with ModifiedEnv(
             LD_LIBRARY_PATH=LIBDIR,
-            PATH=f'{PREFIX}/bin:' + os.environ['PATH']
+            PATH=f'{BIN}:' + os.environ['PATH']
     ):
         os.makedirs(
             os.path.join(f'{PREFIX}/lib/dbus-1.0/include'), exist_ok=True)
-        #ggettext.c:(.text+0x5db): undefined reference to `libintl_dngettext'
-        apply_patch('glib/glib-musl-libintl.patch')
         meson_build(
-            force_posix_threads='true', internal_pcre='true', gtk_doc='false',
-            man='false', selinux='disabled', iconv='external')
+            force_posix_threads='true', gtk_doc='false', library_path=True,
+            man='false', selinux='disabled', c_link_args=f'-L{LIBDIR} -liconv')

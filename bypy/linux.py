@@ -18,7 +18,7 @@ from .utils import call, print_cmd, single_instance
 
 DEFAULT_BASE_IMAGE = (
     'http://dl-cdn.alpinelinux.org/alpine/'
-    'v3.12/releases/x86_64/alpine-minirootfs-3.12.0-x86_64.tar.gz'
+    'v3.19/releases/x86_64/alpine-minirootfs-3.19.1-x86_64.tar.gz'
 )
 
 arch = '64'
@@ -124,13 +124,13 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
     call('sudo tar -C "{}" -xpf "{}"'.format(img_path, archive), echo=False)
 #aarch64
     if "aarch64"  in archive:
-        qemuurl='https://github.com/multiarch/qemu-user-static/releases/download/v5.2.0-2/qemu-aarch64-static'
+        qemuurl='https://github.com/multiarch/qemu-user-static/releases/download/v7.2.0-1/qemu-aarch64-static'
         call('sudo wget "{}" -P "{}"/usr/bin'.format(qemuurl,img_path), echo=False)
         call('sudo chmod +x  "{}"/usr/bin/qemu-aarch64-static'.format(img_path), echo=False)
 #
 #armv7l
     if "armv7l"  in archive:
-        qemuurl='https://github.com/multiarch/qemu-user-static/releases/download/v5.2.0-2/qemu-arm-static'
+        qemuurl='https://github.com/multiarch/qemu-user-static/releases/download/v7.2.0-1/qemu-arm-static'
         call('sudo wget "{}" -P "{}"/usr/bin'.format(qemuurl,img_path), echo=False)
         call('sudo chmod +x  "{}"/usr/bin/qemu-arm-static'.format(img_path), echo=False)
 #
@@ -163,10 +163,10 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
         'apk update',
         'apk add shadow',
         'apk add build-base zsh perl cmake autoconf autoconf-archive automake git curl xz python3 linux-headers nasm libidn-dev libxml2-dev libtool freetype-dev fontconfig-dev meson  gettext-dev dbus-glib-dev ttf-dejavu mesa-dev',
-        'apk add py3-pip',
+        'apk add py3-pip ninja go py3-virtualenv py3-pip rsync fstrim linux-pam screen dbus ',
         #'curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py',
         #'python3.8 get-pip.py',
-        'python3.8 -m pip install ninja==1.10.0',
+        #'python3.8 -m pip install ninja==1.10.0',
         ##'apt-get update',
         ##'apt-get install -y build-essential cmake software-properties-common'
         ##' nasm chrpath zsh git uuid-dev libmount-dev'
@@ -228,9 +228,9 @@ def mount_all(tdir):
 
     mount(tdir, '/tmp')
     mount(sw_dir, '/sw')
-    mount(os.getcwd(), '/src', readonly=True)
+    mount(os.getcwd(), '/src', readonly=False)
     mount(sources_dir, '/sources')
-    mount(os.path.dirname(base), '/bypy', readonly=True)
+    mount(os.path.dirname(base), '/bypy', readonly=False)
     mount('/dev', '/dev')
     scall('sudo', 'mount', '-t', 'proc', 'proc',
           os.path.join(img_path, 'proc'))
@@ -264,7 +264,7 @@ def run(args):
         try:
             mount_all(tdir)
             ##cmd = ['python3.7', '/bypy', 'main'] + args
-            cmd = ['python3.8', '/bypy', 'main'] + args
+            cmd = ['python3', '/bypy', 'main'] + args
             os.environ.pop('LANG', None)
             for k in tuple(os.environ):
                 if k.startswith('LC') or k.startswith('XAUTH'):

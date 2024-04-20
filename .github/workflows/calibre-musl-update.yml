@@ -1,11 +1,6 @@
 name: calibre-musl-update-build
 
 on:
-  push:
-    branches:
-      - alpine-musl
-    paths:
-      - '.github/workflows/calibre-musl-update.yml'
   workflow_dispatch:
 
 env:

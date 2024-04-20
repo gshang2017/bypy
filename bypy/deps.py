@@ -7,12 +7,16 @@ import os
 import sys
 from operator import itemgetter
 
-from .constants import PKG, PREFIX, SOURCES, build_dir, ismacos, mkdtemp
+from .constants import (
+    PKG, PREFIX, SOURCES, UNIVERSAL_ARCHES, build_dir, current_build_arch,
+    currently_building_dep, ismacos, lipo_data, mkdtemp
+)
 from .download_sources import download, read_deps
-from .utils import (RunFailure, create_package, ensure_clear_dir,
-                    extract_source_and_chdir, fix_install_names,
-                    install_package, python_build, python_install, qt_build,
-                    rmtree, run_shell, set_title, simple_build)
+from .utils import (
+    RunFailure, create_package, ensure_clear_dir, extract_source_and_chdir,
+    fix_install_names, install_package, lipo, python_build, python_install,
+    qt_build, rmtree, run_shell, set_title, simple_build
+)
 
 
 def pkg_path(dep):
@@ -20,18 +24,11 @@ def pkg_path(dep):
 
 
 def make_build_dir(dep_name):
-    ans = None
-    if ans is None:
-        ans = mkdtemp(prefix=f'{dep_name}-')
-    return ans
+    return mkdtemp(prefix=f'{dep_name}-')
 
 
-def build_dep(dep, args, dest_dir=PREFIX):
+def module_for_dep(dep):
     dep_name = dep['name']
-    set_title('Building ' + dep_name)
-    owd = os.getcwd()
-    output_dir = todir = make_build_dir(dep_name)
-    build_dir(output_dir)
     idep = dep_name.replace('-', '_')
     try:
         m = importlib.import_module('bypy.pkgs.' + idep)
@@ -41,7 +38,36 @@ def build_dep(dep, args, dest_dir=PREFIX):
         if os.path.exists(os.path.join(module_dir, f'{idep}.py')):
             raise
         m = None
-    tsdir = extract_source_and_chdir(os.path.join(SOURCES, dep['filename']))
+    return m
+
+
+class CleanupDirs:
+
+    def __init__(self):
+        self.dirs = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        for x in self.dirs:
+            try:
+                rmtree(x)
+            except PermissionError:
+                pass
+
+    def __call__(self, x):
+        self.dirs.append(x)
+
+
+def build_once(dep, m, args, cleanup, target=None):
+    base = dep['name']
+    if target:
+        base += f'.{target}.'
+    output_dir = make_build_dir(base)
+    build_dir(output_dir, target)
+    cleanup(output_dir)
+    cleanup(extract_source_and_chdir(os.path.join(SOURCES, dep['filename'])))
     try:
         if hasattr(m, 'main'):
             m.main(args)
@@ -67,23 +93,46 @@ def build_dep(dep, args, dest_dir=PREFIX):
         traceback.print_exc()
         print('\nDropping you into a shell')
         sys.stdout.flush(), sys.stderr.flush()
-        run_shell()
+        run_shell(cwd=build_dir())
         raise SystemExit(1)
-    create_package(m, output_dir, pkg_path(dep))
-    install_package(pkg_path(dep), dest_dir)
-    if hasattr(m, 'post_install_check'):
-        try:
-            m.post_install_check()
-        except (Exception, SystemExit):
-            import traceback
-            traceback.print_exc()
-            print('\nDropping you into a shell')
-            sys.stdout.flush(), sys.stderr.flush()
-            run_shell()
-            raise SystemExit(1)
+    return output_dir
+
+
+def build_dep(dep, args, dest_dir=PREFIX):
+    current_build_arch(None)
+    currently_building_dep(dep)
+    dep_name = dep['name']
+    owd = os.getcwd()
+    m = module_for_dep(dep)
+    needs_lipo = ismacos and getattr(
+        m, 'needs_lipo', False) and len(UNIVERSAL_ARCHES) > 1
+    with CleanupDirs() as cleanup:
+        if needs_lipo:
+            output_dirs = []
+            lipo_data.clear()
+            for arch in UNIVERSAL_ARCHES:
+                output_dirs.append((arch, build_once(
+                    dep, m, args, cleanup, target=arch)))
+            build_dir(make_build_dir(dep_name))
+            getattr(m, 'lipo', lipo)(output_dirs)
+        else:
+            build_once(dep, m, args, cleanup)
+
+        if m is None and dep_name.startswith('qt-'):
+            m = importlib.import_module('bypy.pkgs.qt_base')
+        create_package(m, pkg_path(dep))
+        install_package(pkg_path(dep), dest_dir)
+        if hasattr(m, 'post_install_check'):
+            try:
+                m.post_install_check()
+            except (Exception, SystemExit):
+                import traceback
+                traceback.print_exc()
+                print('\nDropping you into a shell')
+                sys.stdout.flush(), sys.stderr.flush()
+                run_shell()
+                raise SystemExit(1)
     os.chdir(owd)
-    rmtree(todir)
-    rmtree(tsdir)
 
 
 def unbuilt(dep):
@@ -92,17 +141,20 @@ def unbuilt(dep):
 
 def install_packages(which_deps, dest_dir=PREFIX):
     ensure_clear_dir(dest_dir)
-    if not which_deps:
+    paths = {dep['name']: pkg_path(dep) for dep in which_deps
+             if os.path.exists(pkg_path(dep))}
+    if not paths:
         return
-    print(f'Installing {len(which_deps)} previously compiled packages:',
+    print(f'Installing {len(paths)} previously compiled packages:',
           end=' ')
     sys.stdout.flush()
     for dep in which_deps:
-        pkg = pkg_path(dep)
-        if os.path.exists(pkg):
-            print(dep['name'], end=', ')
-            sys.stdout.flush()
-            install_package(pkg, dest_dir)
+        if dep['name'] not in paths:
+            continue
+        pkg = paths[dep['name']]
+        print(dep['name'], end=', ')
+        sys.stdout.flush()
+        install_package(pkg, dest_dir)
     print()
     sys.stdout.flush()
 
@@ -127,6 +179,7 @@ def main(parsed_args):
     accept_func = unbuilt
     all_deps = read_deps()
     all_dep_names = frozenset(map(itemgetter('name'), all_deps))
+    #if parsed_args.dependencies:
     if parsed_args.deps:
         accept_func = accept_func_from_names(parsed_args.deps)
         if (frozenset(parsed_args.deps) - {'qt'}) - all_dep_names:
@@ -142,11 +195,12 @@ def main(parsed_args):
     download(deps_to_build)
 
     built_names = set()
-    for dep in deps_to_build:
+    for i, dep in enumerate(deps_to_build):
+        set_title(f'Building {dep["name"]} -- {i+1} of {len(deps_to_build)}')
         try:
             build_dep(dep, parsed_args)
             built_names.add(dep['name'])
-            print(f'{dep["name"]} successfully built!')
+            print(f'\x1b[36m{dep["name"]} successfully built!\x1b[m')
         finally:
             remaining = tuple(
                     d['name'] for d in deps_to_build

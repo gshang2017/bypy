@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import tempfile
+import platform
 from functools import lru_cache
 
 
@@ -49,6 +50,8 @@ PATCHES = os.path.join(BYPY, 'patches')
 SH = 'C:/cygwin64/bin/zsh' if iswindows else '/bin/zsh'
 if iswindows:
     os.environ['TMPDIR'] = os.environ['TEMP'] = os.environ['TMP'] = tempfile.tempdir = r'C:\t\t'  # noqa
+elif islinux and os.path.exists(SW):
+    os.environ['TMPDIR'] = os.environ['TEMP'] = os.environ['TMP'] = tempfile.tempdir = os.path.join(SW, 't')  # noqa
 PREFIX = os.path.join(SW, 'sw')
 BIN = os.path.join(PREFIX, 'bin')
 PYTHON = os.path.join(
@@ -68,6 +71,17 @@ CL = 'cl.exe'
 LINK = 'link.exe'
 LIB = 'lib.exe'
 
+if islinux:
+	worker_env['CC'] = 'gcc'
+	worker_env['CPP'] = 'cpp'
+	worker_env['CXX'] = 'g++'
+	worker_env['AS'] = 'as'	
+	worker_env['AR'] = 'ar'
+	worker_env['STRIP'] = 'strip'
+	worker_env['RANLIB'] = 'ranlib'
+	worker_env['LD'] = 'ld'
+	worker_env['READELF'] = 'readelf'
+	worker_env['NM'] = 'nm'
 
 def normpath(a):
     return os.path.normcase(os.path.abspath(a))
@@ -131,6 +145,8 @@ else:
         CMAKE = os.path.join(BIN, 'cmake')
         if os.environ.get('BYPY_UNIVERSAL') == 'true':
             UNIVERSAL_ARCHES = ('x86_64', 'arm64')
+            if 'RELEASE_ARM64' in platform.version():
+                UNIVERSAL_ARCHES = ('arm64', 'x86_64')
         if 'BYPY_DEPLOY_TARGET' in os.environ:
             worker_env['MACOSX_DEPLOYMENT_TARGET'] = os.environ[
                 'BYPY_DEPLOY_TARGET']
@@ -142,10 +158,12 @@ else:
 def mkdtemp(prefix=''):
     tdir = getattr(mkdtemp, 'tdir', None)
     if tdir is None:
-        if iswindows:
-            tdir = tempfile.tempdir
+        if ismacos:
+            # macOS tends to delete files from /tmp periodically
+            _CS_DARWIN_USER_CACHE_DIR = 65538
+            tdir = os.path.join(os.confstr(_CS_DARWIN_USER_CACHE_DIR), 't')
         else:
-            tdir = os.path.join(tempfile.gettempdir(), 't')
+            tdir = tempfile.tempdir
         from .utils import ensure_clear_dir
         ensure_clear_dir(tdir)
         mkdtemp.tdir = tdir
@@ -158,6 +176,12 @@ def current_build_arch(val=False):
     return getattr(current_build_arch, 'ans', None)
 
 
+def currently_building_dep(val=False):
+    if val is not False:
+        currently_building_dep.ans = val
+    return getattr(currently_building_dep, 'ans', None)
+
+
 def build_dir(newval=None, current_arch=None):
     if newval is not None:
         build_dir.ans = newval
@@ -165,9 +189,11 @@ def build_dir(newval=None, current_arch=None):
     return getattr(build_dir, 'ans', None)
 
 
-def is_arm_half_of_lipo_build():
-    return ismacos and UNIVERSAL_ARCHES and 'arm' in (
-        current_build_arch() or '')
+def is_cross_half_of_lipo_build():
+    if not ismacos or not UNIVERSAL_ARCHES:
+        return False
+    cba = current_build_arch()
+    return bool(cba) and cba != UNIVERSAL_ARCHES[0]
 
 
 lipo_data = {}

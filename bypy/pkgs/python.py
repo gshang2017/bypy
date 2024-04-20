@@ -7,9 +7,9 @@ import os
 import re
 import shutil
 
-from bypy.constants import (CFLAGS, LDFLAGS, LIBDIR, PREFIX, PYTHON, build_dir,
-                            is64bit, islinux, ismacos, iswindows,
-                            )
+from bypy.constants import (CFLAGS, LDFLAGS, LIBDIR, PREFIX, PYTHON,
+                            UNIVERSAL_ARCHES, build_dir, is64bit, islinux,
+                            ismacos, iswindows)
 from bypy.utils import (ModifiedEnv, copy_headers, get_platform_toolset,
                         get_windows_sdk, install_binaries, replace_in_file,
                         run, simple_build, walk)
@@ -22,37 +22,58 @@ def unix_python(args):
     }
     replace_in_file('setup.py', re.compile(b'def detect_tkinter.+:'),
                     lambda m: m.group() + b'\n' + b' ' * 8 + b'return 0')
-    conf = ('--enable-ipv6 --with-system-expat --with-pymalloc'
-            ' --with-lto --enable-optimizations'
-            ' --without-ensurepip --with-c-locale-coercion')
-    install_args = ()
+    conf = (
+        '--enable-ipv6 --with-pymalloc --with-system-expat'
+        ' --with-lto --enable-optimizations'
+        ' --enable-loadable-sqlite-extensions'
+        ' --without-ensurepip --with-c-locale-coercion'
+    )
+    install_args = []
     if islinux:
         conf += f' --with-system-ffi --enable-shared --prefix={build_dir()}'
         # Needed as the system openssl is too old, causing the _ssl module
         # to fail
         env['LD_LIBRARY_PATH'] = LIBDIR
     elif ismacos:
-        conf += f' --enable-framework={build_dir()}/python'
+        # Since python 3.11 python hardcodes the --prefix path for
+        # sys.exec_prefix in the Python binary, so we have to use the final
+        # installation dir as --prefix. We use symlinks to make it work
+        conf += f' --enable-framework={PREFIX}/python'
         conf += f' --with-openssl={PREFIX}'
-        # Needed for readline detection
-        env['MACOSX_DEPLOYMENT_TARGET'] = '10.14'
-        env['LDFLAGS'] = LDFLAGS.replace('-headerpad_max_install_names', '')
-        cwd = os.getcwd()
-        replace_in_file(
-            'configure',
-            "PYTHON_FOR_BUILD='./$(BUILDPYTHON) -E'",
-            f"PYTHON_FOR_BUILD='PYTHONEXECUTABLE={cwd}/$(BUILDPYTHON) PYTHONPATH={cwd}/Lib ./$(BUILDPYTHON)'"  # noqa
-        )
+        # is_pad requires macOS 14.0 (sonoma)
+        replace_in_file('configure',
+                        'ac_cv_lib_curses_is_pad=yes', 'ac_cv_lib_curses_is_pad=no')
+        if len(UNIVERSAL_ARCHES) > 1:
+            conf += ' --enable-universalsdk --with-universal-archs=universal2'
+            # Without ARCHFLAGS the extensions are built for only one arch
+            env['ARCHFLAGS'] = ' '.join(f'-arch {x}' for x in UNIVERSAL_ARCHES)
+        # We need rpath for libexpat to load from LIBDIR when loading the
+        # _elementtree module which links against it as @rpath/libexpat.1.dylib
+        env['LDFLAGS'] = LDFLAGS.replace('-headerpad_max_install_names', '') + f' -rpath {LIBDIR}'
         # dont install IDLE and PythonLauncher
         replace_in_file(
             'Mac/Makefile.in',
             'installapps: install_Python install_PythonLauncher install_IDLE',
             'installapps: install_Python'
         )
-        install_args = (f'PYTHONAPPSDIR={build_dir()}',)
+        # needed to build universal 3rd party python extensions. See
+        # _supports_arm64_builds() in _osx_support.py
+        replace_in_file(
+            'Lib/_osx_support.py', 'osx_version >= (11, 0)', 'osx_version >= (10, 15)')
+        install_args.append(f'PYTHONAPPSDIR={build_dir()}')
 
-    with ModifiedEnv(**env):
-        simple_build(conf, relocate_pkgconfig=False, install_args=install_args)
+        # create the symlink so make install actually installs into build_dir() not --prefix
+        if os.path.exists(f'{PREFIX}/python'):
+            shutil.rmtree(f'{PREFIX}/python')
+        os.mkdir(f'{build_dir()}/python')
+        os.symlink(f'{build_dir()}/python', f'{PREFIX}/python')
+
+    try:
+        with ModifiedEnv(**env):
+            simple_build(conf, relocate_pkgconfig=False, install_args=install_args)
+    finally:
+        if ismacos:
+            os.remove(f'{PREFIX}/python')
 
     bindir = os.path.join(build_dir(), 'bin')
 
@@ -63,29 +84,7 @@ def unix_python(args):
         f.write(raw.replace(
             f'{build_dir()}'.encode('utf-8'), PREFIX.encode('utf-8')))
 
-    if ismacos:
-        for f in os.listdir(bindir):
-            link = os.path.join(bindir, f)
-            with open(link, 'r+b') as f:
-                raw = f.read()
-                if raw.startswith(b'#!/'):
-                    replace_bdir(f, raw)
-            if os.path.islink(link):
-                fp = os.readlink(link)
-                nfp = fp.replace(build_dir(), PREFIX)
-                if nfp != fp:
-                    os.unlink(link)
-                    os.symlink(nfp, link)
-        libdir = glob.glob(
-            f'{build_dir()}/python/Python.framework/'
-            'Versions/Current/lib/python*')[0]
-        for x in (
-            'config-*-darwin/python-config.py',
-            '_sysconfigdata__darwin_darwin.py'
-        ):
-            with open(glob.glob(f'{libdir}/{x}')[0], 'r+b') as f:
-                replace_bdir(f)
-    else:
+    if not ismacos:
         replace_in_file(os.path.join(bindir, 'python3-config'),
                         re.compile(br'^prefix=".+?"', re.MULTILINE),
                         f'prefix="{PREFIX}"')
@@ -94,7 +93,7 @@ def unix_python(args):
 #            'python*/config-*-linux-gnu/python-config.py',
 #            'python*/_sysconfigdata__linux_*-linux-gnu.py',
             'python*/config-*-linux-*/python-config.py',
-            'python*/_sysconfigdata__linux_*-linux-*.py',
+            'python*/_sysconfigdata__linux_*-linux-*.py',            
         ):
             with open(glob.glob(f'{libdir}/{x}')[0], 'r+b') as f:
                 replace_bdir(f)
@@ -129,7 +128,7 @@ def windows_python(args):
         replace_in_file(
             'Lib\\mimetypes.py',
             re.compile(br'try:.*?import\s+winreg.*?None', re.DOTALL),
-            r'_winreg = None')
+            r'_winreg = _mimetypes_read_windows_registry = None')
 
         bindir = 'PCbuild\\amd64' if is64bit else 'PCbuild\\win32'
         install_binaries(bindir + os.sep + '*.exe', 'private\\python')
@@ -144,6 +143,7 @@ def windows_python(args):
         copy_headers('PC\\pyconfig.h', 'private\\python\\include')
         copy_headers('Include\\*.h', 'private\\python\\include')
         copy_headers('Include\\cpython', 'private\\python\\include')
+        copy_headers('Include\\internal', 'private\\python\\include')
         with open('Lib/sitecustomize.py', 'w') as f:
             f.write('''
 import os
@@ -175,6 +175,10 @@ def filter_pkg(parts):
         for p in parts:
             if p.startswith('plat-'):
                 return True
+    if ismacos:
+        # this is a non-universal python launcher
+        if parts and parts[-1].endswith('-intel64'):
+            return True
     return False
 
 
@@ -183,7 +187,9 @@ def install_name_change_predicate(p):
 
 
 def post_install_check():
-    mods = '_ssl zlib bz2 ctypes sqlite3 lzma'.split()
+    mods = '_ssl zlib bz2 ctypes sqlite3 lzma math _elementtree'.split()
     if not iswindows:
         mods.extend('readline _curses'.split())
-    run(PYTHON, '-c', 'import ' + ','.join(mods), library_path=True)
+    run(PYTHON, '-c', 'import sys; print(sys.prefix, sys.exec_prefix); import ' + ','.join(mods), library_path=True)
+    run(PYTHON, '-c', 'import sqlite3; c = sqlite3.Connection(":memory:");'
+        'c.enable_load_extension(True)', library_path=True)

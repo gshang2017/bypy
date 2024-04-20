@@ -6,11 +6,15 @@ from ..constants import ismacos
 from ..utils import simple_build
 
 
+needs_lipo = True
+
+
 def main(args):
     ft = 'no' if ismacos else 'yes'
     ct = 'yes' if ismacos else 'no'
-    simple_build(
+    configure = (
         '--disable-dependency-tracking --disable-static --with-glib=no'
-        ' --with-freetype={} --with-gobject=no --with-cairo=no'
-        ' --with-fontconfig=no --with-icu=no --with-coretext={}'
-        .format(ft, ct))
+        f' --with-freetype={ft} --with-gobject=no --with-cairo=no'
+        f' --with-fontconfig=no --with-icu=no --with-coretext={ct}'
+    ).split()
+    simple_build(configure)

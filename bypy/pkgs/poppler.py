@@ -4,22 +4,25 @@
 
 import os
 
-from bypy.constants import iswindows, ismacos, PREFIX
+from bypy.constants import PREFIX, ismacos, iswindows
 from bypy.utils import (cmake_build, install_binaries, replace_in_file,
                         windows_cmake_build)
 
 
 def main(args):
-    cmake_args = dict(ENABLE_CPP='0',
-                      ENABLE_GLIB='OFF',
-                      ENABLE_GOBJECT_INTROSPECTION='OFF',
-                      ENABLE_CMS='none',
-                      ENABLE_QT5='OFF',
-                      ENABLE_LIBCURL='OFF',
-                      BUILD_GTK_TESTS='OFF',
-                      BUILD_QT5_TESTS='OFF',
-                      BUILD_CPP_TESTS='OFF',
-                      CMAKE_INSTALL_LIBDIR='lib')
+    cmake_args = dict(
+        ENABLE_CPP='0',
+        ENABLE_GLIB='OFF',
+        ENABLE_GOBJECT_INTROSPECTION='OFF',
+        ENABLE_CMS='none',
+        ENABLE_QT5='OFF',
+        ENABLE_QT6='OFF',
+        ENABLE_BOOST='OFF',
+        ENABLE_LIBCURL='OFF',
+        BUILD_GTK_TESTS='OFF',
+        BUILD_QT5_TESTS='OFF',
+        BUILD_CPP_TESTS='OFF',
+    )
     # poppler unconditionally searches for cairo which we dont want
     replace_in_file('CMakeLists.txt',
                     'macro_optional_find_package(Cairo ${CAIRO_VERSION})',
@@ -43,8 +46,13 @@ def main(args):
             'set(poppler_LIBS ${poppler_LIBS} openjp2)',
             'set(poppler_LIBS ${poppler_LIBS} %s)' % opjlib
         )
+        replace_in_file(  # even though optional searching for it requires pkg-config causing failure
+            'CMakeLists.txt',
+            'macro_optional_find_package(NSS3)', '')
         windows_cmake_build(**cmake_args)
         install_binaries('build/utils/*.exe', 'bin')
+        install_binaries('build/*.dll', 'bin')
+        install_binaries('build/*.lib', 'lib')
     else:
         cmake_build(**cmake_args)
 

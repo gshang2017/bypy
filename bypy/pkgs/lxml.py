@@ -11,10 +11,17 @@ from bypy.utils import python_build, python_install, replace_in_file, run
 
 def main(args):
     if iswindows:
-        # libxml2 does not depend on iconv in our windows build
-        replace_in_file('setupinfo.py', ", 'iconv'", '')
+        # libiconv is named libiconv.lib not iconv.lib for us
+        replace_in_file('setupinfo.py', ", 'iconv'", ', "libiconv"')
         run(PYTHON, *('setup.py build_ext -I {0}/include;{0}/include/libxml2 -L {0}/lib'.format(PREFIX.replace(os.sep, '/')).split()))
     else:
         run(PYTHON, *('setup.py build_ext -I {0}/include/libxml2 -L {0}/lib'.format(PREFIX).split()), library_path=True)
     python_build()
     python_install()
+
+
+def post_install_check():
+    code = '''import lxml.etree as e; print(e); e.fromstring(b'<r/>');'''
+    if iswindows:
+        code = 'import ctypes; x = ctypes.WinDLL("libxml2.dll"); x.xmlInitParser(); ' + code
+    run(PYTHON, '-c', code, library_path=True)

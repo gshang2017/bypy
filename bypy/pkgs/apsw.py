@@ -5,7 +5,7 @@
 import os
 
 from bypy.constants import PREFIX, PYTHON, build_dir, iswindows
-from bypy.utils import python_install, run
+from bypy.utils import python_build, python_install, run
 
 
 def main(args):
@@ -17,9 +17,7 @@ def main(args):
             'install', '--root', build_dir()
         )
     else:
-        run(
-            PYTHON, 'setup.py', 'build', '--enable=load_extension', 'install',
-            '--root', build_dir(), library_path=True)
+        python_build(extra_args=('--enable=load_extension'))
     python_install()
 
 
@@ -35,7 +33,7 @@ def install_name_change(old_name, is_dep):
 
 
 def post_install_check():
-    code = '''import apsw; \
+    code = '''import apsw; print(apsw); \
     c = apsw.Connection(":memory:"); \
     c.cursor().execute( \
     'CREATE VIRTUAL TABLE email USING fts5(title, body);')'''

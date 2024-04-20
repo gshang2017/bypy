@@ -44,6 +44,19 @@ def remove_extension_suffix(name):
     return name
 
 
+def is_package_dir(x):
+    try:
+        for x in os.listdir(x):
+            x = x.lower()
+            if x.startswith('__init__.'):
+                ext = x.rpartition('.')[2]
+                if ext in ('py', 'pyi', 'so', 'pyd'):
+                    return True
+    except (NotADirectoryError, FileNotFoundError):
+        pass
+    return False
+
+
 def extract_extension_modules(src_dir, dest_dir, move=True):
     ext_map = {}
 
@@ -55,6 +68,8 @@ def extract_extension_modules(src_dir, dest_dir, move=True):
         fullname = package + ('.' if package else '') + module
         dest_name = fullname + extension_suffixes()[-1]
         ext_map[fullname] = dest_name
+        if fullname.endswith('.__init__'):
+            ext_map[fullname.rpartition('.')[0]] = dest_name
         dest = os.path.join(dest_dir, dest_name)
         if os.path.exists(dest):
             raise ValueError(
@@ -147,7 +162,7 @@ def importer_src_to_header(develop_mode_env_var, path_to_user_env_vars):
         '__EXTENSION_SUFFIXES__', repr(extension_suffixes()), 1)
     src = compile_code(src, "bypy-importer.py")
     script = '\n'.join(bin_to_c(src))
-    return 'static const char importer_script[] = {' + script + '};'
+    return 'static const unsigned char importer_script[] = {' + script + '};'
 
 
 def collect_files_for_internment(base):
@@ -219,9 +234,35 @@ def cleanup_site_packages(sp_dir):
     return {}
 
 
+def remove_pyc_files_in(base):
+    for f in walk(base):
+        if f.lower().endswith('.pyc'):
+            os.remove(f)
+    for dirpath, dirnames, filenames in os.walk(base):
+        if '__pycache__' in dirnames:
+            os.rmdir(os.path.join(dirpath, '__pycache__'))
+            dirnames.remove('__pycache__')
+
+
+def delete_empty_folders(root: str) -> None:
+
+    deleted = set()
+
+    for current_dir, subdirs, files in os.walk(root, topdown=False):
+
+        still_has_subdirs = any(
+            1 for subdir in subdirs
+            if os.path.join(current_dir, subdir) not in deleted
+        )
+
+        if not any(files) and not still_has_subdirs:
+            os.rmdir(current_dir)
+            deleted.add(current_dir)
+
+
 def freeze_python(
     base, dest_dir, include_dir, extensions_map, develop_mode_env_var='',
-    path_to_user_env_vars=''
+    path_to_user_env_vars='', remove_pyc_files=False
 ):
     files = collect_files_for_internment(base)
     frozen_file = os.path.join(dest_dir, 'python-lib.bypy.frozen')
@@ -261,7 +302,10 @@ get_value_for_hash_index(int index, unsigned long *offset, unsigned long *size)
     *offset = 0; *size = 0;
     }}
 }}
-static const char filesystem_tree[] = {{ {tree} }};
+static const unsigned char filesystem_tree[] = {{ {tree} }};
 ''' + importer_src_to_header(develop_mode_env_var, path_to_user_env_vars)
     with open(os.path.join(include_dir, 'bypy-data-index.h'), 'w') as f:
-        f.write(header)
+        f.write(header + '\n')
+    if remove_pyc_files:
+        remove_pyc_files_in(base)
+        delete_empty_folders(base)

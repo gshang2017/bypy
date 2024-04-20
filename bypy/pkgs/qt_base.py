@@ -3,22 +3,101 @@
 # License: GPLv3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 import os
-import shutil
 
-from bypy.constants import (CFLAGS, LDFLAGS, LIBDIR, MAKEOPTS, NMAKE, PREFIX,
-                            build_dir, islinux, ismacos, iswindows)
-from bypy.utils import replace_in_file, run, run_shell, apply_patch
+from bypy.constants import (
+    BIN, CMAKE, PERL, PREFIX, UNIVERSAL_ARCHES, build_dir,
+    currently_building_dep, islinux, ismacos, iswindows
+)
+from bypy.utils import (
+    apply_patch, relocate_pkgconfig_files, replace_in_file, run, run_shell
+)
+
+
+def cmake(args):
+    # Mapping of configure args to cmake directives comes from the file
+    # cmake/configure-cmake-mapping.md in the qtbase source code.
+    cmake_defines = {
+        'CMAKE_INSTALL_PREFIX': os.path.join(build_dir(), 'qt'),
+        'CMAKE_SYSTEM_PREFIX_PATH': PREFIX,
+        'CMAKE_BUILD_TYPE': 'Release',
+        'CMAKE_INTERPROCEDURAL_OPTIMIZATION': 'ON',  # LTO build
+        'QT_BUILD_EXAMPLES': 'FALSE',
+        'QT_BUILD_TESTS': 'FALSE',
+        'OPENSSL_ROOT_DIR': PREFIX,
+        'ICU_ROOT': PREFIX,
+        'ZLIB_ROOT': PREFIX,
+        'JPEG_ROOT': PREFIX,
+        'PNG_ROOT': PREFIX,
+        'INPUT_sql_odbc': 'no',
+        'INPUT_sql_psql': 'no',
+        'INPUT_icu': 'yes',
+        'INPUT_harfbuzz': 'qt',
+        'INPUT_doubleconversion': 'qt',
+        'INPUT_pcre': 'qt',
+    }
+    if islinux:
+        cmake_defines.update({
+            'INPUT_bundled_xcb_xinput': 'yes',
+            'INPUT_xcb': 'yes',
+            'INPUT_glib': 'yes',
+            'INPUT_openssl': 'linked',
+            'INPUT_xkbcommon': 'yes',
+            'INPUT_libinput': 'yes',
+            # 'INPUT_linker': 'gold',
+            'INPUT_pkg_config': 'yes',
+            # 'INPUT_wflags': 'l,-rpath-link,/sw/sw/lib--',
+        })
+    if ismacos:
+        if len(UNIVERSAL_ARCHES) > 1:
+            cmake_defines['CMAKE_OSX_ARCHITECTURES'] = ';'.join(UNIVERSAL_ARCHES)
+        cmake_defines.update({
+            'FEATURE_framework': 'ON',
+            'FEATURE_pkg_config': 'OFF',
+            'INPUT_openssl': 'no',
+            'FEATURE_securetransport': 'ON',
+            'FEATURE_fontconfig': 'OFF',
+        })
+    if iswindows:
+        cmake_defines.update({
+            'INPUT_openssl': 'no',
+            'FEATURE_pkg_config': 'OFF',
+            'FEATURE_schannel': 'ON',
+            'FEATURE_fontconfig': 'OFF',
+        })
+        # allow overriding Qt's notion of the cache dir which is used by
+        # QWebEngineProfile
+        replace_in_file(
+            './src/corelib/io/qstandardpaths_win.cpp', 'case CacheLocation:',
+            'case CacheLocation: {'
+            ' const wchar_t *cq = _wgetenv(L"CALIBRE_QT_CACHE_LOCATION");'
+            ' if (cq) return QString::fromWCharArray(cq); }')
+    os.mkdir('build'), os.chdir('build')
+    cmd = [CMAKE] + [f'-D{k}={v}' for k, v in cmake_defines.items()] + [
+        '-G', 'Ninja', '..']
+    if iswindows:
+        run(*cmd, library_path=True, append_to_path=BIN,
+            prepend_to_path=os.path.dirname(PERL))
+        run_shell  # ()
+        run(CMAKE, '--build', '.', '--parallel',
+            prepend_to_path=os.path.dirname(PERL),
+            append_to_path=f'{PREFIX}/private/gnuwin32/bin')
+    else:
+        run(*cmd, library_path=True, append_to_path=BIN)
+        run_shell  # ()
+        run(CMAKE, '--build', '.', '--parallel',
+            library_path=True, append_to_path=BIN)
+    run(CMAKE, '--install', '.')
+    with open(os.path.join(build_dir(), 'qt', 'bin', 'qt.conf'), 'wb') as f:
+        f.write(b"[Paths]\nPrefix = ..\n")
+        if iswindows:
+            # this is needed for qmake as otherwise qmake sets QT_INSTALL_LIBS
+            # to bin which breaks building of PyQt. Hopefully if and when PyQt
+            # moves off qmake this can be removed
+            f.write(b'Libraries = lib\n')
 
 
 def main(args):
     if islinux:
-        # We disable loading of bearer plugins because many distros ship with
-        # broken bearer plugins that cause hangs.  At least, this was the case
-        # in Qt 4.x Dont know if it is still true for Qt 5 but since we dont
-        # need bearers anyway, it cant hurt.
-        replace_in_file(
-            'src/network/bearer/qnetworkconfigmanager_p.cpp',
-            b'/bearer"', b'/bearer-disabled-by-kovid"')
         # Change pointing_hand to hand2, see
         # https://bugreports.qt.io/browse/QTBUG-41151
         replace_in_file('src/plugins/platforms/xcb/qxcbcursor.cpp',
@@ -27,19 +106,27 @@ def main(args):
         # Let Qt setup its paths based on runtime location
         # this is needed because we want Qt to be able to
         # find its plugins etc before QApplication is constructed
+        getenv = '_wgetenv' if iswindows else 'getenv'
+        ff = 'fromWCharArray' if iswindows else 'fromUtf8'
+        ev = 'L"CALIBRE_QT_PREFIX"' if iswindows else '"CALIBRE_QT_PREFIX"'
         replace_in_file(
             'src/corelib/global/qlibraryinfo.cpp',
             '= getPrefix',
-            '= getenv("CALIBRE_QT_PREFIX") ?'
-            ' getenv("CALIBRE_QT_PREFIX") : getPrefix')
-    apply_patch('qt-base/qt-base-qt-musl-iconv-no-bom.patch')
-    apply_patch('qt-base/qt-base-qt-xcb-util-dependency-remove.patch')
+            f'= {getenv}({ev}) ?'
+            f' QString::{ff}({getenv}({ev})) : getPrefix')
+    if islinux:
+        # Fix error: 'XKB_KEY_dead_lowline'
+        apply_patch('qtbug-117950.patch', level=1)
     if iswindows:
+        # Fix moving parent windows causing child window to move/resize
+        apply_patch('qtbug-117779.patch', level=1)
+        # Fix file:// URLs mangled in text widgets
+        apply_patch('qtbug-120577.patch', level=1)
         # Enable loading of DLLs from the bin directory
         replace_in_file(
             'src/corelib/global/qlibraryinfo.cpp',
-            '{ "Libraries", "lib" }',
-            '{ "Libraries", "bin" }'
+            '"Libraries", "lib"',
+            '"Libraries", "bin"'
         )
         replace_in_file(
             'src/corelib/plugin/qsystemlibrary.cpp',
@@ -47,50 +134,16 @@ def main(args):
             'searchOrder << (QFileInfo(qAppFileName()).path()'
             r".replace(QLatin1Char('/'), QLatin1Char('\\'))"
             r'+ QString::fromLatin1("\\app\\bin\\"));')
-    cflags, ldflags = CFLAGS, LDFLAGS
-    if ismacos:
-        ldflags = '-L' + LIBDIR
-    os.mkdir('build'), os.chdir('build')
-    configure = os.path.abspath(
-        '..\\configure.bat') if iswindows else '../configure'
-    conf = configure + (
-        ' -v -silent -opensource -confirm-license -prefix {}/qt -release'
-        ' -nomake examples -nomake tests -no-sql-odbc -no-sql-psql'
-        ' -icu -qt-harfbuzz -qt-doubleconversion').format(build_dir())
-    if islinux:
-        # Gold linker is needed for Qt 5.13.0 because of
-        # https://bugreports.qt.io/browse/QTBUG-76196
-        conf += (' -bundled-xcb-xinput -xcb -glib -openssl -qt-pcre'
-                 ' -xkbcommon -libinput -linker gold')
-    elif ismacos:
-        conf += ' -no-pkg-config -framework -no-openssl -securetransport'
-        ' -no-freetype -no-fontconfig '
-    elif iswindows:
-        # Qt links incorrectly against libpng and libjpeg, so use the bundled
-        # copy Use dynamic OpenGl, as per:
-        # https://doc.qt.io/qt-5/windows-requirements.html#dynamically-loading-graphics-drivers
-        conf += (' -openssl -directwrite -ltcg -mp'
-                 ' -no-plugin-manifests -no-freetype -no-fontconfig'
-                 ' -qt-libpng -qt-libjpeg ')
-        # The following config items are not supported on windows
-        conf = conf.replace('-v -silent ', '-v ')
-        cflags = '-I {}/include'.format(PREFIX).replace(os.sep, '/')
-        ldflags = '-L {}/lib'.format(PREFIX).replace(os.sep, '/')
-    conf += ' ' + cflags + ' ' + ldflags
-    run(conf, library_path=True)
-    # run_shell()
-    run_shell
-    if iswindows:
-        run(f'"{NMAKE}"', append_to_path=f'{PREFIX}/private/gnuwin32/bin')
-        run(f'"{NMAKE}" install')
-        shutil.copy2('../src/3rdparty/sqlite/sqlite3.c',
-                     os.path.join(build_dir(), 'qt'))
-    else:
-        run('make ' + MAKEOPTS, library_path=True)
-        run('make install')
-    with open(os.path.join(build_dir(), 'qt', 'bin', 'qt.conf'), 'wb') as f:
-        f.write(b"[Paths]\nPrefix = ..\n")
+    cmake(args)
+    relocate_pkgconfig_files()
 
 
 def modify_exclude_extensions(extensions):
     extensions.discard('cpp')
+
+
+def modify_excludes(excludes):
+    if currently_building_dep()['name'] == 'qt-declarative':
+        # qt-declarative puts artifacts needed for modules that depnd on it to
+        # build in the test directory. Bloody lunacy.
+        excludes.discard('test')

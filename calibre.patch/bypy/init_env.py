@@ -2,18 +2,14 @@
 # vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import print_function
-
 import json
 import os
 import re
 import subprocess
 import sys
 
-from bypy.constants import (
-    LIBDIR, PREFIX, PYTHON, SRC as CALIBRE_DIR, build_dir, islinux, ismacos,
-    iswindows, worker_env
-)
+from bypy.constants import LIBDIR, PREFIX, PYTHON, build_dir, islinux, ismacos, worker_env
+from bypy.constants import SRC as CALIBRE_DIR
 from bypy.utils import run_shell
 
 dlls = [
@@ -22,22 +18,21 @@ dlls = [
     'Gui',
     'Network',
     # 'NetworkAuth',
-    'Location',
     'PrintSupport',
     'WebChannel',
     # 'WebSockets',
     # 'WebView',
     'Positioning',
-    'PositioningQuick',
     'Sensors',
     'Sql',
     'Svg',
+    'WebChannel',
     'WebEngineCore',
-    'WebEngine',
     'WebEngineWidgets',
     'Widgets',
     # 'Multimedia',
     'OpenGL',
+    'OpenGLWidgets',
     'Quick',
     'QuickWidgets',
     'Qml',
@@ -48,22 +43,21 @@ dlls = [
 ]
 
 if islinux:
-    dlls += ['X11Extras', 'XcbQpa', 'WaylandClient', 'DBus']
+    dlls += ['XcbQpa', 'WaylandClient', 'WaylandEglClientHwIntegration', 'DBus']
 elif ismacos:
-    dlls += ['MacExtras', 'DBus']
-elif iswindows:
-    dlls += ['WinExtras']
+    dlls += ['DBus']
 
+QT_MAJOR = 6
 QT_DLLS = frozenset(
-    'Qt5' + x for x in dlls
+    f'Qt{QT_MAJOR}' + x for x in dlls
 )
 
 QT_PLUGINS = [
     'imageformats',
     'iconengines',
+    'tls',
     # 'mediaservice',
     'platforms',
-    'platformthemes',
     # 'playlistformats',
     'sqldrivers',
     # 'webview',
@@ -72,7 +66,9 @@ QT_PLUGINS = [
 
 if islinux:
     QT_PLUGINS += [
+        'egldeviceintegrations',
         'platforminputcontexts',
+        'platformthemes',
         'wayland-decoration-client',
         'wayland-graphics-integration-client',
         'wayland-shell-integration',
@@ -91,15 +87,14 @@ PYQT_MODULES = (
     'QtSensors',
     'QtSvg',
     'QtWidgets',
+    'QtOpenGL',
+    'QtOpenGLWidgets',
     'QtWebEngine',
     'QtWebEngineCore',
     'QtWebEngineWidgets',
     'QtWebChannel',
 )
 del dlls
-
-if iswindows:
-    PYQT_MODULES += ('QtWinExtras',)
 
 
 def read_cal_file(name):
@@ -187,7 +182,7 @@ def run_tests(path_to_calibre_debug, cwd_on_failure):
 #
 #arm build
     archname = os.uname()
-    if "armv7l"  in archname:
+    if "aarch64" or "armv7l"  in archname:
         os.environ["SKIP_QT_BUILD_TEST"] = "1"
 #
     ret = run(path_to_calibre_debug, '--test-build')

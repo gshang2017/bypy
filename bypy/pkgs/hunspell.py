@@ -4,10 +4,13 @@
 
 import os
 
-from bypy.constants import BIN, ismacos
-from bypy.utils import (ModifiedEnv, copy_headers, current_dir,
-                        install_binaries, iswindows, msbuild, run,
-                        simple_build, walk)
+from bypy.constants import BIN, current_build_arch, ismacos
+from bypy.utils import (
+    ModifiedEnv, copy_headers, current_dir, install_binaries, iswindows,
+    msbuild, replace_in_file, run, simple_build, walk
+)
+
+needs_lipo = True
 
 
 def main(args):
@@ -36,9 +39,9 @@ def main(args):
             env['LIBTOOLIZE'] = 'glibtoolize'
             env['LIBTOOL'] = 'glibtool'
         with ModifiedEnv(**env):
-            run('autoreconf -fiv')
+            run('autoreconf -fv')
+        if ismacos:
+            replace_in_file('configure', '-keep_private_externs', f'-keep_private_externs -arch {current_build_arch()} ')
         conf = '--disable-dependency-tracking'
         env = {}
-        if ismacos:
-            conf += ' --host x86_64-apple-darwin'
         simple_build(conf)

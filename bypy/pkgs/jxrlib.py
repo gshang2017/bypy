@@ -3,8 +3,11 @@
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 import os
-from bypy.constants import iswindows
-from bypy.utils import walk, run, install_binaries, msbuild
+from bypy.constants import iswindows, ismacos
+from bypy.utils import walk, run, install_binaries, msbuild, current_build_arch, replace_in_file
+
+
+needs_lipo = True
 
 
 def main(args):
@@ -19,5 +22,17 @@ def main(args):
             if f.endswith('.exe'):
                 install_binaries(f, 'bin', fname_map=fname_map)
     else:
+        if ismacos:
+            flags = ''
+            if current_build_arch():
+                flags += f'-arch {current_build_arch()} '
+            replace_in_file('Makefile', 'CFLAGS=', f'CFLAGS={flags}')
+            replace_in_file('Makefile', 'CXXFLAGS=', f'CXXFLAGS={flags}')
+            replace_in_file('jxrgluelib/JXRGlueJxr.c', '#include <JXRGlue.h>', '#include <JXRGlue.h>\n#include <wchar.h>')
+            replace_in_file('image/decode/segdec.c', '#include "strcodec.h"', '''
+#include "strcodec.h"
+#include <libkern/OSByteOrder.h>
+#define _byteswap_ulong OSSwapInt32
+''')
         run('make', os.path.join(os.getcwd(), 'build/JxrDecApp'))
         install_binaries('build/JxrDecApp', 'bin')

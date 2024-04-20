@@ -2,10 +2,11 @@
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
 
 from bypy.utils import simple_build
+
+
+allow_non_universal = True
 
 
 def main(args):
@@ -14,5 +15,6 @@ def main(args):
 
 def filter_pkg(parts):
     return 'Help' in parts
+
 
 pkg_exclude_extensions = frozenset()
