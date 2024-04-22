@@ -118,22 +118,25 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
     if os.path.exists(img_store_path):
         os.remove(img_store_path)
     os.makedirs(img_path)
-    call('truncate', '-s', '2G', img_store_path)
+    call('truncate', '-s', '3G', img_store_path)
     call('mkfs.ext4', img_store_path)
     mount_image()
     call('sudo tar -C "{}" -xpf "{}"'.format(img_path, archive), echo=False)
-#aarch64
-    if "aarch64"  in archive:
-        qemuurl='https://github.com/multiarch/qemu-user-static/releases/download/v7.2.0-1/qemu-aarch64-static'
-        call('sudo wget "{}" -P "{}"/usr/bin'.format(qemuurl,img_path), echo=False)
-        call('sudo chmod +x  "{}"/usr/bin/qemu-aarch64-static'.format(img_path), echo=False)
 #
-#armv7l
-    if "armv7l"  in archive:
-        qemuurl='https://github.com/multiarch/qemu-user-static/releases/download/v7.2.0-1/qemu-arm-static'
-        call('sudo wget "{}" -P "{}"/usr/bin'.format(qemuurl,img_path), echo=False)
-        call('sudo chmod +x  "{}"/usr/bin/qemu-arm-static'.format(img_path), echo=False)
+    call('sudo', 'mkdir', '-p', os.path.join(img_path,'opt/cross'))
+    if os.path.exists(os.path.join(img_path,'lib/ld-musl-i386.so.1')):
 #
+#armv7l_cross
+        armv7lcrossurl='http://more.musl.cc/11.2.1/i686-linux-musl/armv7l-linux-musleabihf-cross.tgz'
+        call('sudo wget "{}" -P "{}"/tmp'.format(armv7lcrossurl,img_path), echo=False)
+        call('sudo tar -zxf "{}"/tmp/armv7l-linux-musleabihf-cross.tgz -C "{}"/opt'.format(img_path,img_path), echo=False)
+        call('sudo rm -rf  "{}"/tmp/armv7l-linux-musleabihf-cross.tgz'.format(img_path), echo=False)
+#aarch64_cross
+    else:
+        aarch64crossurl='http://more.musl.cc/11.2.1/x86_64-linux-musl/aarch64-linux-musl-cross.tgz'
+        call('sudo wget "{}" -P "{}"/tmp'.format(aarch64crossurl,img_path), echo=False)
+        call('sudo tar -zxf "{}"/tmp/aarch64-linux-musl-cross.tgz -C "{}"/opt'.format(img_path,img_path), echo=False)
+        call('sudo rm -rf  "{}"/tmp/aarch64-linux-musl-cross.tgz'.format(img_path), echo=False)
     ##if os.getegid() != 100:
     ##    chroot('groupadd -f -g {} {}'.format(os.getegid(), 'crusers'))
     ##chroot(
@@ -163,7 +166,7 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
         'apk update',
         'apk add shadow',
         'apk add build-base zsh perl cmake autoconf autoconf-archive automake git curl xz python3 linux-headers nasm libidn-dev libxml2-dev libtool freetype-dev fontconfig-dev meson  gettext-dev dbus-glib-dev ttf-dejavu mesa-dev',
-        'apk add py3-pip ninja go py3-virtualenv py3-pip rsync fstrim linux-pam screen dbus ',
+        'apk add py3-pip ninja go py3-virtualenv py3-pip rsync fstrim linux-pam screen dbus nodejs',
         #'curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py',
         #'python3.8 get-pip.py',
         #'python3.8 -m pip install ninja==1.10.0',
@@ -182,6 +185,7 @@ def _build_container(url=DEFAULT_BASE_IMAGE):
         # Cleanup
         ##'apt-get clean',
         ##'chsh -s /bin/zsh ' + user,
+        #
         'apk add icu==73.2-r2 --repository https://dl-cdn.alpinelinux.org/alpine/v3.18/main',
     ]:
         chroot(cmd)
@@ -239,8 +243,9 @@ def mount_all(tdir):
     scall('sudo', 'chmod', 'a+w', os.path.join(img_path, 'dev/shm'))
     scall('sudo', 'mount', '--bind', '/dev/shm',
           os.path.join(img_path, 'dev/shm'))
-
-
+    #scall('sudo', 'mkdir', '-p', os.path.join(img_path,'opt/cross'))
+    scall( 'sudo', 'mount', img_path + 'cross.img', os.path.join(img_path,'opt/cross'))
+        
 def umount_all():
     found = True
     while found:

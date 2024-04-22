@@ -1,0 +1,24 @@
+#!/usr/bin/env python2
+# vim:fileencoding=utf-8
+# License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
+
+import os
+
+from bypy.constants import BIN, LIBDIR, PREFIX
+from bypy.utils import ModifiedEnv, meson_build
+
+
+def main(args):
+#
+    with ModifiedEnv(
+        CFLAGS='',
+        CPPFLAGS='',
+        LDFLAGS='',
+    ):
+        os.makedirs(
+            os.path.join(f'{PREFIX}/lib/dbus-1.0/include'), exist_ok=True)
+#
+        meson_build(
+            force_posix_threads='true', gtk_doc='false', library_path=True,use_cross=True,
+            man='false', selinux='disabled', c_link_args=f'-L{LIBDIR} -liconv')
+

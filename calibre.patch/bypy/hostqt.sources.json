@@ -1,0 +1,74 @@
+[
+    {
+        "name": "qt-base",
+        "version": "6.5.3",
+        "hashes": {
+            "unix": "md5:9b3b8e45d0923bc6928833d185b29e40"
+        }
+    },
+
+    {
+        "name": "qt-svg",
+        "hashes": {
+            "unix": "md5:6e29e50c706d1ef870d232f260cf05c2"
+        }
+    },
+
+    {
+        "name": "qt-shadertools",
+        "hashes": {
+            "unix": "md5:e751ba53872f74546e01277b51e0218d"
+        }
+    },
+
+    {
+        "name": "qt-declarative",
+        "hashes": {
+            "unix": "md5:c6f3840960803d8c1654ba48f9742814"
+        }
+    },
+
+    {
+        "name": "qt-imageformats",
+        "hashes": {
+            "unix": "md5:47838764e104e7cb2390038989ba91ea"
+        }
+    },
+
+    {
+        "name": "qt-webchannel",
+        "hashes": {
+            "unix": "md5:d92af561c15f5af61656eabcdbaf1d27"
+        }
+    },
+
+    {
+        "name": "qt-positioning",
+        "hashes": {
+            "unix": "md5:c1eb22c2cdd18a8228e433e4e5d1577a"
+        }
+    },
+
+    {
+        "name": "qt-wayland",
+        "os": "linux",
+        "hashes": {
+            "unix": "md5:b73feecf0fef221ed748ea7c984f45be"
+        }
+    },
+
+    {
+        "name": "qt-sensors",
+        "hashes": {
+            "unix": "md5:c4a48b39a3aaba6534f7fa5fbc363b0f"
+        }
+    },
+
+    {
+        "name": "qt-webengine",
+        "hashes": {
+            "unix": "md5:b418c1b4e333a06609dac451c4484e23"
+        }
+    }
+
+]

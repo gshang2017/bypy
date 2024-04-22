@@ -6,27 +6,33 @@ import os
 
 from bypy.constants import (
     BIN, CMAKE, PERL, PREFIX, UNIVERSAL_ARCHES, build_dir,
-    currently_building_dep, islinux, ismacos, iswindows
+    currently_building_dep, islinux, ismacos, iswindows,LDFLAGS
 )
 from bypy.utils import (
-    apply_patch, relocate_pkgconfig_files, replace_in_file, run, run_shell
+    apply_patch, relocate_pkgconfig_files, replace_in_file, run, run_shell,ModifiedEnv
 )
 
 
 def cmake(args):
+ #env = {}
+ #env['PATH'] = '/opt/aarch64-linux-musl-cross/bin:' + os.environ['PATH']
+ #with ModifiedEnv(**env):
     # Mapping of configure args to cmake directives comes from the file
     # cmake/configure-cmake-mapping.md in the qtbase source code.
     cmake_defines = {
         'CMAKE_INSTALL_PREFIX': os.path.join(build_dir(), 'qt'),
-        'CMAKE_SYSTEM_PREFIX_PATH': PREFIX,
+        #'CMAKE_SYSTEM_PREFIX_PATH': PREFIX,
         'CMAKE_BUILD_TYPE': 'Release',
-        'CMAKE_INTERPROCEDURAL_OPTIMIZATION': 'ON',  # LTO build
+        'CMAKE_INTERPROCEDURAL_OPTIMIZATION': 'OFF',  # LTO build
         'QT_BUILD_EXAMPLES': 'FALSE',
         'QT_BUILD_TESTS': 'FALSE',
         'OPENSSL_ROOT_DIR': PREFIX,
         'ICU_ROOT': PREFIX,
         'ZLIB_ROOT': PREFIX,
-        'JPEG_ROOT': PREFIX,
+#
+        #'JPEG_ROOT': PREFIX,
+        'INPUT_libjpeg': 'qt',
+
         'PNG_ROOT': PREFIX,
         'INPUT_sql_odbc': 'no',
         'INPUT_sql_psql': 'no',
@@ -34,19 +40,50 @@ def cmake(args):
         'INPUT_harfbuzz': 'qt',
         'INPUT_doubleconversion': 'qt',
         'INPUT_pcre': 'qt',
+
     }
     if islinux:
-        cmake_defines.update({
-            'INPUT_bundled_xcb_xinput': 'yes',
-            'INPUT_xcb': 'yes',
-            'INPUT_glib': 'yes',
-            'INPUT_openssl': 'linked',
-            'INPUT_xkbcommon': 'yes',
-            'INPUT_libinput': 'yes',
-            # 'INPUT_linker': 'gold',
-            'INPUT_pkg_config': 'yes',
-            # 'INPUT_wflags': 'l,-rpath-link,/sw/sw/lib--',
-        })
+#
+        if os.path.exists('/opt/armv7l-linux-musleabihf-cross'):
+            cmake_defines.update({
+                'INPUT_bundled_xcb_xinput': 'yes',
+                'INPUT_xcb': 'yes',
+                'INPUT_glib': 'yes',
+                'INPUT_openssl': 'linked',            
+                'INPUT_xkbcommon': 'yes',
+                'INPUT_libinput': 'yes',
+                # 'INPUT_linker': 'gold',
+                'INPUT_pkg_config': 'yes',
+                # 'INPUT_wflags': 'l,-rpath-link,/sw/sw/lib--',
+
+                'QT_HOST_PATH': '/bypy/qt',
+                'FEATURE_forkfd_pidfd': 'OFF',
+                'QT_FORCE_BUILD_TOOLS': 'ON',
+                'CMAKE_TOOLCHAIN_FILE': '/bypy/patches/toolchain-armv7.cmake',
+                #arm*|aarch64
+                'QT_FEATURE_opengles2': 'ON',
+        
+            })
+        else:     
+            cmake_defines.update({
+                'INPUT_bundled_xcb_xinput': 'yes',
+                'INPUT_xcb': 'yes',
+                'INPUT_glib': 'yes',
+                'INPUT_openssl': 'linked',            
+                'INPUT_xkbcommon': 'yes',
+                'INPUT_libinput': 'yes',
+                # 'INPUT_linker': 'gold',
+                'INPUT_pkg_config': 'yes',
+                # 'INPUT_wflags': 'l,-rpath-link,/sw/sw/lib--',
+
+                'QT_HOST_PATH': '/bypy/qt',
+                'FEATURE_forkfd_pidfd': 'OFF',
+                'QT_FORCE_BUILD_TOOLS': 'ON',
+                'CMAKE_TOOLCHAIN_FILE': '/bypy/toolchain-arm64.cmake',
+                #arm*|aarch64
+                'QT_FEATURE_opengles2': 'ON',
+        
+            })
     if ismacos:
         if len(UNIVERSAL_ARCHES) > 1:
             cmake_defines['CMAKE_OSX_ARCHITECTURES'] = ';'.join(UNIVERSAL_ARCHES)
@@ -101,7 +138,7 @@ def main(args):
         # Change pointing_hand to hand2, see
         # https://bugreports.qt.io/browse/QTBUG-41151
         replace_in_file('src/plugins/platforms/xcb/qxcbcursor.cpp',
-                        'pointing_hand"', 'hand2"')
+                        'pointing_hand"', 'hand2"')                      
     if iswindows or islinux:
         # Let Qt setup its paths based on runtime location
         # this is needed because we want Qt to be able to
@@ -114,6 +151,7 @@ def main(args):
             '= getPrefix',
             f'= {getenv}({ev}) ?'
             f' QString::{ff}({getenv}({ev})) : getPrefix')
+#
     if islinux:
         # Fix error: 'XKB_KEY_dead_lowline'
         #apply_patch('qtbug-117950.patch', level=1)

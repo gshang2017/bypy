@@ -1,0 +1,17 @@
+[binaries]
+c = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-gcc'
+cpp = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-g++'
+ar = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-ar'
+ld = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-ld'
+strip = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-strip'
+pkgconfig = 'pkg-config'
+
+[properties]
+pkg_config_libdir = '/sw/sw/lib/pkgconfig'
+
+
+[host_machine]
+system = 'linux'
+cpu_family = 'arm'
+cpu = 'arm'
+endian = 'little'
