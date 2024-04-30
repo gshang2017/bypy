@@ -60,7 +60,7 @@ def cmake(args):
                 'FEATURE_forkfd_pidfd': 'OFF',
                 'QT_FORCE_BUILD_TOOLS': 'ON',
                 'CMAKE_TOOLCHAIN_FILE': '/bypy/patches/toolchain-armv7.cmake',
-                #arm*|aarch64
+                #arm*|armv7
                 'QT_FEATURE_opengles2': 'ON',
         
             })
@@ -79,7 +79,7 @@ def cmake(args):
                 'QT_HOST_PATH': '/bypy/qt',
                 'FEATURE_forkfd_pidfd': 'OFF',
                 'QT_FORCE_BUILD_TOOLS': 'ON',
-                'CMAKE_TOOLCHAIN_FILE': '/bypy/toolchain-arm64.cmake',
+                'CMAKE_TOOLCHAIN_FILE': '/bypy/patches/toolchain-arm64.cmake',
                 #arm*|aarch64
                 'QT_FEATURE_opengles2': 'ON',
         
