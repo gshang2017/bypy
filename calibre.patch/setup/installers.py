@@ -96,7 +96,7 @@ def build_single(which='windows', bitness='64', shutdown=True, sign_installers=T
         dirs = os.path.join(base, 'dist')
         if not os.path.exists(dirs):
             os.makedirs(dirs)
-#        
+#
         try:
             os.remove(dest)
         except OSError:
@@ -176,7 +176,7 @@ class BuildInstaller(Command):
 class BuildInstallers(BuildInstaller):
 
     OS = ''
-    ALL_ARCHES = '64',
+    ALL_ARCHES = ('64',)
 
     def run(self, opts):
         for bitness in self.ALL_ARCHES:
@@ -266,7 +266,7 @@ class ExtDev(Command):
             ext_dir = build_only(which, '', ext)
             src = os.path.join(ext_dir, f'{ext}.so')
             print(
-                "\n\n\x1b[33;1mWARNING: This does not work on macOS, unless you use un-signed builds with ",
+                '\n\n\x1b[33;1mWARNING: This does not work on macOS, unless you use un-signed builds with ',
                 ' ./update-on-ox develop\x1b[m',
                 file=sys.stderr, end='\n\n\n')
             host = 'ox'

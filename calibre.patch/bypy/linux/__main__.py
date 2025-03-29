@@ -15,6 +15,7 @@ from functools import partial
 from bypy.constants import LIBDIR, OUTPUT_DIR, PREFIX, python_major_minor_version
 from bypy.constants import SRC as CALIBRE_DIR
 from bypy.freeze import extract_extension_modules, fix_pycryptodome, freeze_python, is_package_dir, path_to_freeze_dir
+from bypy.pkgs.piper import copy_piper_dir
 from bypy.utils import create_job, get_dll_path, mkdtemp, parallel_build, py_compile, run, walk
 
 j = os.path.join
@@ -25,13 +26,16 @@ if machine.startswith('arm') or machine.startswith('aarch64'):
     arch = 'arm64'
 py_ver = '.'.join(map(str, python_major_minor_version()))
 QT_PREFIX = os.path.join(PREFIX, 'qt')
+FFMPEG_PREFIX = os.path.join(PREFIX, 'ffmpeg', 'lib')
 iv = globals()['init_env']
 calibre_constants = iv['calibre_constants']
 QT_DLLS, QT_PLUGINS, PYQT_MODULES = iv['QT_DLLS'], iv['QT_PLUGINS'], iv['PYQT_MODULES']
 qt_get_dll_path = partial(get_dll_path, loc=os.path.join(QT_PREFIX, 'lib'))
+ffmpeg_get_dll_path = partial(get_dll_path, loc=FFMPEG_PREFIX)
 
 
 def binary_includes():
+    ffmpeg_dlls = tuple(os.path.basename(x).partition('.')[0][3:] for x in glob.glob(os.path.join(FFMPEG_PREFIX, '*.so')))
     return [
         j(PREFIX, 'bin', x) for x in ('pdftohtml', 'pdfinfo', 'pdftoppm', 'pdftotext', 'optipng', 'cwebp', 'JxrDecApp')] + [
 
@@ -41,7 +45,7 @@ def binary_includes():
             ('usb-1.0 mtp expat sqlite3 ffi z lzma openjp2 poppler dbus-1 iconv xml2 xslt jpeg png16'
              ' webp webpmux webpdemux sharpyuv exslt ncursesw readline chm hunspell-1.7 hyphen'
              ' icudata icui18n icuuc icuio stemmer gcrypt gpg-error uchardet graphite2'
-             ' brotlicommon brotlidec brotlienc zstd podofo ssl crypto tiff'
+             ' brotlicommon brotlidec brotlienc zstd podofo ssl crypto deflate tiff'
              ' gobject-2.0 glib-2.0 gthread-2.0 gmodule-2.0 gio-2.0 dbus-glib-1').split()
         )) + [
             # debian/ubuntu for for some typical stupid reason use libpcre.so.3
@@ -51,6 +55,8 @@ def binary_includes():
             # than libc and libpthread we bundle the Ubuntu one here
             #glob.glob('/usr/lib/*/libpcre.so.3')[0],
             glob.glob('/usr/lib/libpcre.so.1')[0],
+            # alpine:3.19 libvpx.so.8
+            glob.glob('/usr/lib/libvpx.so.8')[0],
             get_dll_path('bz2', 2), j(PREFIX, 'lib', 'libunrar.so'),
             get_dll_path('python' + py_ver, 2), get_dll_path('jbig', 2),
 
@@ -61,7 +67,7 @@ def binary_includes():
             # distros do not have libstdc++.so.6, so it should be safe to leave it out.
             # https://gcc.gnu.org/onlinedocs/libstdc++/manual/abi.html (The current
             # debian stable libstdc++ is  libstdc++.so.6.0.17)
-    ] + list(map(qt_get_dll_path, QT_DLLS))
+    ] + list(map(qt_get_dll_path, QT_DLLS)) + list(map(ffmpeg_get_dll_path, ffmpeg_dlls))
 
 
 class Env:
@@ -84,11 +90,12 @@ def ignore_in_lib(base, items, ignored_dirs=None):
         ignored_dirs = {'.svn', '.bzr', '.git', 'test', 'tests', 'testing'}
     for name in items:
         path = j(base, name)
+        is_kakasi = 'pykakasi' in path
         if os.path.isdir(path):
-            if name != 'plugins' and (name in ignored_dirs or not is_package_dir(path)):
+            if name != 'plugins' and (name in ignored_dirs or not is_package_dir(path)) and not (is_kakasi and name == 'data'):
                 ans.append(name)
         else:
-            if name.rpartition('.')[-1] not in ('so', 'py'):
+            if name.rpartition('.')[-1] not in ('so', 'py') and not (is_kakasi and name.endswith('.db')):
                 ans.append(name)
     return ans
 
@@ -108,6 +115,11 @@ def import_site_packages(srcdir, dest):
                     import_site_packages(src, dest)
         elif is_package_dir(f):
             shutil.copytree(f, j(dest, x), ignore=ignore_in_lib)
+
+
+def copy_piper(env):
+    print('Copying piper...')
+    copy_piper_dir(PREFIX, env.bin_dir)
 
 
 def copy_libs(env):
@@ -256,7 +268,7 @@ def strip_files(files, argv_max=(256 * 1024)):
 
 
 def strip_binaries(env):
-    files = {j(env.bin_dir, x) for x in os.listdir(env.bin_dir)} | {
+    files = {j(env.bin_dir, x) for x in os.listdir(env.bin_dir) if x != 'piper'} | {
         x for x in {
             j(os.path.dirname(env.bin_dir), x) for x in os.listdir(env.bin_dir)} if os.path.exists(x)}
     for x in walk(env.lib_dir):
@@ -274,12 +286,14 @@ def strip_binaries(env):
 def create_tarfile(env, compression_level='9'):
     print('Creating archive...')
     base = OUTPUT_DIR
+    #arch = 'arm64' if 'arm64' in os.environ['BYPY_ARCH'] else ('i686' if 'i386' in os.environ['BYPY_ARCH'] else 'x86_64')
     try:
         shutil.rmtree(base)
     except EnvironmentError as err:
-        if err.errno != errno.ENOENT:
+        if err.errno not in (errno.ENOENT, errno.EBUSY):
             raise
     os.mkdir(base)
+    os.makedirs(base, exist_ok=True)  # when base is a mount point deleting it fails with EBUSY
 #arm build
     archname = os.uname()
     if "aarch64"  in archname:
@@ -289,7 +303,7 @@ def create_tarfile(env, compression_level='9'):
     if "x86_64"  in archname:
         arch = 'x86_64'
 #
-    #dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))    
+    #dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))
     dist = os.path.join(base, '%s-%s-%s.musl.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))
     with tarfile.open(dist, mode='w', format=tarfile.PAX_FORMAT) as tf:
         cwd = os.getcwd()
@@ -317,6 +331,7 @@ def main():
     env = Env()
     copy_libs(env)
     copy_python(env, ext_dir)
+    copy_piper(env)
     build_launchers(env)
     if not args.skip_tests:
         run_tests(j(env.base, 'calibre-debug'), env.base)

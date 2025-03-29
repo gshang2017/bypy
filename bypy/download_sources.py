@@ -81,7 +81,8 @@ def populate_qt_dep(dep, qt_version):
 
 @lru_cache()
 def read_deps(only_buildable=True):
-    with open(os.path.join(SRC, 'bypy', 'sources.json')) as f:
+    src = SRC if os.path.exists(SRC) else os.getcwd()
+    with open(os.path.join(src, 'bypy', 'sources.json')) as f:
         data = json.load(f)
     qt_version = None
     for dep in data:
@@ -153,8 +154,11 @@ def reporthook():
 
 
 def get_pypi_url(pkg):
-    parts = pkg['filename'].split('-')
-    pkg_name = '-'.join(parts[:-1])
+    if pkg['filename'].endswith('.whl'):
+        pkg_name = pkg['filename'].partition('-')[0]
+    else:
+        parts = pkg['filename'].split('-')
+        pkg_name = '-'.join(parts[:-1])
     base = 'https://pypi.python.org/simple/%s/' % pkg_name
     raw = urlopen(base).read().decode('utf-8')
     for m in re.finditer((

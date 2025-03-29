@@ -201,7 +201,11 @@ def run_shell(library_path=False, cwd=None, env=None):
         sys.stdout.flush()
         cmd += ['-i']  # -l causes shell to change cwd to $HOME
     else:
-        cmd += ['-il']
+        kitten = shutil.which('kitten')
+        if kitten:
+            cmd = [kitten, 'run-shell']
+        else:
+            cmd += ['-il']
     try:
         return subprocess.Popen(cmd, env=env, cwd=cwd).wait()
     except KeyboardInterrupt:
@@ -256,6 +260,16 @@ def run(*args, **kw):
         return stdout
 
 
+def safe_link(src, dst):
+    try:
+        os.link(src, dst)
+    except OSError as err:
+        if err.errno != errno.EXDEV:
+            raise
+        # fallback to a copy when the files reside on different filesystems
+        shutil.copy(src, dst)
+
+
 def lcopy(src, dst, no_hardlinks=False):
     try:
         if os.path.islink(src):
@@ -266,7 +280,7 @@ def lcopy(src, dst, no_hardlinks=False):
             if no_hardlinks:
                 shutil.copy(src, dst)
             else:
-                os.link(src, dst)
+                safe_link(src, dst)
             return False
     except FileExistsError:
         os.unlink(dst)
@@ -402,7 +416,7 @@ def simple_build(
             relocate_pkgconfig_files()
 
 
-def qt_build(configure_args='', for_webengine=False, **env):
+def qt_build(configure_args='', for_webengine=False, dep_name='', **env):
     # To get configure args run qt-configure-module . -help in the module
     # source dir
     os.mkdir('build')
@@ -429,6 +443,8 @@ def qt_build(configure_args='', for_webengine=False, **env):
         env['PYTHON3_PATH'] = os.path.dirname(os.path.abspath(sys.executable))
     if for_webengine:
         pass  # configure_args += ' -no-feature-webengine-jumbo-build'
+    if dep_name == 'qt-multimedia':
+        configure_args += f' -- -DFFMPEG_DIR={PREFIX.replace(os.sep, "/")}/ffmpeg'
     run(
         qcm, '..', *shlex.split(configure_args.strip()),
         library_path=True, append_to_path=append_to_path or None,
@@ -561,6 +577,15 @@ def fix_install_names(m, output_dir):
             change_lib_names(p, changes)
 
 
+def python_build_env():
+    env = {}
+    # For some reason with Xcode 15.4 python's idiotic extension build system output the
+    # -arch flags in the linker but not the compiler command.
+    if ismacos and len(UNIVERSAL_ARCHES) > 1:
+        env['CFLAGS'] = f'{worker_env["CFLAGS"]} ' + ' '.join(f'-arch {x}' for x in UNIVERSAL_ARCHES)
+    return env
+
+
 def python_build(extra_args=(), ignore_dependencies=False):
     if isinstance(extra_args, str):
         extra_args = split(extra_args)
@@ -569,7 +594,8 @@ def python_build(extra_args=(), ignore_dependencies=False):
     extra_args = [f'--config-setting={x}' for x in extra_args]
     if ignore_dependencies:
         extra_args.append('--skip-dependency-check')
-    run(PYTHON, '-m', 'build', '--wheel', '--no-isolation', *extra_args, library_path=True)
+    env = python_build_env()
+    run(PYTHON, '-m', 'build', '--wheel', '--no-isolation', *extra_args, library_path=True, env=env)
     whl = glob.glob('dist/*.whl')[0]
     os.symlink(whl, 'wheel')
     wheel_build()
@@ -759,10 +785,7 @@ def library_symlinks(full_name, destdir='lib'):
             os.symlink(full_name, ln)
 
 
-def install_binaries(
-    pattern, destdir='lib', do_symlinks=False, fname_map=os.path.basename
-):
-    dest = os.path.join(build_dir(), destdir)
+def copy_binaries(pattern, dest, do_symlinks=False, fname_map=os.path.basename):
     os.makedirs(dest, exist_ok=True)
     files = glob.glob(pattern)
     files.sort(key=len, reverse=True)
@@ -776,6 +799,14 @@ def install_binaries(
             os.chmod(dst, 0o755)
         if iswindows and os.path.exists(f + '.manifest'):
             shutil.copy(f + '.manifest', dst + '.manifest')
+    return files
+
+
+def install_binaries(
+    pattern, destdir='lib', do_symlinks=False, fname_map=os.path.basename
+):
+    dest = os.path.join(build_dir(), destdir)
+    files = copy_binaries(pattern, dest)
     if do_symlinks:
         library_symlinks(files[0], destdir=destdir)
     return files
@@ -963,7 +994,7 @@ def cmake_build(
 
 def meson_build(extra_cmdline='', library_path=None, **options):
     cmd = [
-        'meson', '--buildtype=release', f'--prefix={build_dir()}',
+        'meson', 'setup', '--buildtype=release', f'--prefix={build_dir()}',
         f'--libdir={build_dir()}/lib'
     ]
     if extra_cmdline:
@@ -1233,6 +1264,9 @@ def setup_build_parser(p):
     s.add_parser('shutdown', help='Shutdown the VM', aliases=['halt', 'poweroff'])
 
     setup_dependencies_parser(s.add_parser('dependencies', aliases=['deps']))
+
+    s.add_parser('reconnect', help='Reconnect to build session after a disconnect, will automatically download built packages from VM after.')
+
     return s
 
 
