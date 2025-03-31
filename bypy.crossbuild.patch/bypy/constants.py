@@ -32,9 +32,16 @@ def base_dir():
     return ans
 
 
+def in_chroot():
+    return getattr(in_chroot, 'ans', False)
+
+
 UNIVERSAL_ARCHES = ()
 ROOT = os.environ.get('BYPY_ROOT', '/').replace('/', os.sep)
-is64bit = sys.maxsize > (1 << 32)
+if 'BUILD_ARCH' in os.environ:
+    is64bit = os.environ['BUILD_ARCH'] != '32'
+else:
+    is64bit = sys.maxsize > (1 << 32)
 SW = os.path.join(ROOT, 'sw')
 if iswindows:
     is64bit = os.environ['BUILD_ARCH'] == '64'
@@ -75,13 +82,13 @@ if islinux:
         CC = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-gcc'
         CPP = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-cpp'
         CXX = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-g++'
-        AS = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-as'    
+        AS = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-as'
         AR = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-ar'
         STRIP = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-strip'
         RANLIB = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-ranlib'
         LD = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-ld'
         READELF = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-readelf'
-        NM = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-nm'        
+        NM = '/opt/armv7l-linux-musleabihf-cross/bin/armv7l-linux-musleabihf-nm'
         worker_env['CC'] = CC
         worker_env['CPP'] = CPP
         worker_env['CXX'] = CXX
@@ -91,18 +98,18 @@ if islinux:
         worker_env['RANLIB'] = RANLIB
         worker_env['LD'] = LD
         worker_env['READELF'] = READELF
-        worker_env['NM'] = NM  
-    else:   
+        worker_env['NM'] = NM
+    else:
     	CC = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc'
     	CPP = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-cpp'
     	CXX = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-g++'
-    	AS = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-as'	
+    	AS = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-as'
     	AR = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-ar'
     	STRIP = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip'
     	RANLIB = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-ranlib'
     	LD = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-ld'
     	READELF = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-readelf'
-    	NM = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-nm'	
+    	NM = '/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-nm'
     	worker_env['CC'] = CC
     	worker_env['CPP'] = CPP
     	worker_env['CXX'] = CXX
@@ -112,7 +119,7 @@ if islinux:
     	worker_env['RANLIB'] = RANLIB
     	worker_env['LD'] = LD
     	worker_env['READELF'] = READELF
-    	worker_env['NM'] = NM	
+    	worker_env['NM'] = NM
 
 def normpath(a):
     return os.path.normcase(os.path.abspath(a))
@@ -155,18 +162,18 @@ if iswindows:
     # needed to bypass distutils broken compiler finding code
     worker_env['DISTUTILS_USE_SDK'] = worker_env['MSSDK'] = '1'
 
-    NMAKE = shutil.which('nmake', path=worker_env['PATH'])
-    CMAKE = shutil.which('cmake', path=worker_env['PATH'])
-    NASM = shutil.which('nasm', path=worker_env['PATH'])
-    CL = shutil.which('cl', path=worker_env['PATH'])
-    LINK = shutil.which('link', path=worker_env['PATH'])
-    LIB = shutil.which('lib', path=worker_env['PATH'])
-    RC = shutil.which('rc', path=worker_env['PATH'])
-    MT = shutil.which('mt', path=worker_env['PATH'])
-    SIGNTOOL = shutil.which('signtool', path=worker_env['PATH'])
+    NMAKE = shutil.which('nmake', path=worker_env['PATH']) or 'nmake'
+    CMAKE = shutil.which('cmake', path=worker_env['PATH']) or 'cmake'
+    NASM = shutil.which('nasm', path=worker_env['PATH']) or 'nasm'
+    CL = shutil.which('cl', path=worker_env['PATH']) or 'cl'
+    LINK = shutil.which('link', path=worker_env['PATH']) or 'link'
+    LIB = shutil.which('lib', path=worker_env['PATH']) or 'lib'
+    RC = shutil.which('rc', path=worker_env['PATH']) or 'rc'
+    MT = shutil.which('mt', path=worker_env['PATH']) or 'mt'
+    SIGNTOOL = shutil.which('signtool', path=worker_env['PATH']) or 'signtool'
 else:
-    #CFLAGS = worker_env['CFLAGS'] = '-I' + os.path.join(PREFIX, 'include') + ' -I/opt/cross/usr/include' 
-    #CPPFLAGS = worker_env['CPPFLAGS'] = '-I' + os.path.join(PREFIX, 'include') + ' -I/opt/cross/usr/include' 
+    #CFLAGS = worker_env['CFLAGS'] = '-I' + os.path.join(PREFIX, 'include') + ' -I/opt/cross/usr/include'
+    #CPPFLAGS = worker_env['CPPFLAGS'] = '-I' + os.path.join(PREFIX, 'include') + ' -I/opt/cross/usr/include'
     CFLAGS = worker_env['CFLAGS'] = '-I' + os.path.join(PREFIX, 'include')
     CPPFLAGS = worker_env['CPPFLAGS'] = '-I' + os.path.join(PREFIX, 'include')
     LIBDIR = os.path.join(PREFIX, 'lib')
@@ -179,9 +186,9 @@ else:
                 f'-headerpad_max_install_names -L{LIBDIR}'
         CMAKE = os.path.join(BIN, 'cmake')
         if os.environ.get('BYPY_UNIVERSAL') == 'true':
-            UNIVERSAL_ARCHES = ('x86_64', 'arm64')
+            UNIVERSAL_ARCHES = 'x86_64', 'arm64'
             if 'RELEASE_ARM64' in platform.version():
-                UNIVERSAL_ARCHES = ('arm64', 'x86_64')
+                UNIVERSAL_ARCHES = 'arm64', 'x86_64'
         if 'BYPY_DEPLOY_TARGET' in os.environ:
             worker_env['MACOSX_DEPLOYMENT_TARGET'] = os.environ[
                 'BYPY_DEPLOY_TARGET']

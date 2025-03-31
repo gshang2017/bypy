@@ -112,6 +112,17 @@
     },
 
     {
+        "name": "libdeflate",
+        "comment": "Used optionally libtiff instead of zlib, sadly the Ubuntu build image comes with this library installed so libtiff links against it on Linux",
+        "os": "linux",
+        "unix": {
+            "filename": "libdeflate-1.21.tar.gz",
+            "hash": "sha256:7f05b533dd1d95e48a9f7d633beab67d8c6f502c01a2a5f46b204c16d1e748ad",
+            "urls": ["https://github.com/ebiggers/libdeflate/releases/download/v1.21/{filename}"]
+        }
+    },
+
+    {
         "name": "zstd",
         "unix": {
             "filename": "zstd-1.5.5.tar.gz",
@@ -507,6 +518,27 @@
     },
 
     {
+        "name": "nv-codec-headers",
+		"comment": "Needed for building Qt Multimedia, see https://code.qt.io/cgit/qt/qt5.git/tree/coin/provisioning/common/unix/install-ffmpeg.sh only change the version when bumping ffmpeg and qt versions.",
+        "os": "linux",
+        "unix": {
+            "filename": "nv-codec-headers-11.1.zip",
+            "hash": "sha256:d0262edcd464c36eddd35c754faf29799161a30b4f8635a4aa06f9ecedf053e2",
+            "urls": ["https://github.com/FFmpeg/nv-codec-headers/archive/refs/heads/sdk/11.1.zip"]
+        }
+    },
+
+    {
+        "name": "ffmpeg",
+		"comment": "Needed for building Qt Multimedia. Only change the version when bumping Qt version. Get the needed ffmpeg version from: https://doc.qt.io/qt-6/qtmultimedia-index.html#ffmpeg-as-the-default-backend",
+		"unix": {
+			"filename": "ffmpeg-7.1.tar.xz",
+			"hash": "sha256:40973d44970dbc83ef302b0609f2e74982be2d85916dd2ee7472d30678a7abe6",
+			"urls": ["https://www.ffmpeg.org/releases/{filename}"]
+		}
+    },
+
+    {
         "name": "qt-base",
         "version": "6.5.3",
         "hashes": {
@@ -568,6 +600,20 @@
         "name": "qt-sensors",
         "hashes": {
             "unix": "md5:c4a48b39a3aaba6534f7fa5fbc363b0f"
+        }
+    },
+
+    {
+        "name": "qt-multimedia",
+        "hashes": {
+            "unix": "sha256:ed64f3d2bb98c20cd12df19dbf84dc0233d9fcb2078fea812adf42eef9a0ff27"
+        }
+    },
+
+    {
+        "name": "qt-speech",
+        "hashes": {
+            "unix": "sha256:79c2f42c4d921a7e73825ead5681b5b32eac52f5e180e1899bb86e68206b0b9c"
         }
     },
 

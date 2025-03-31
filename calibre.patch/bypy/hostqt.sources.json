@@ -65,10 +65,23 @@
     },
 
     {
+        "name": "qt-multimedia",
+        "hashes": {
+            "unix": "sha256:ed64f3d2bb98c20cd12df19dbf84dc0233d9fcb2078fea812adf42eef9a0ff27"
+        }
+    },
+
+    {
+        "name": "qt-speech",
+        "hashes": {
+            "unix": "sha256:79c2f42c4d921a7e73825ead5681b5b32eac52f5e180e1899bb86e68206b0b9c"
+        }
+    },
+
+    {
         "name": "qt-webengine",
         "hashes": {
             "unix": "md5:b418c1b4e333a06609dac451c4484e23"
         }
     }
-
 ]

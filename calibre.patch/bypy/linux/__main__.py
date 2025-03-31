@@ -22,8 +22,15 @@ j = os.path.join
 self_dir = os.path.dirname(os.path.abspath(__file__))
 machine = (os.uname()[4] or '').lower()
 arch = 'x86_64'
-if machine.startswith('arm') or machine.startswith('aarch64'):
-    arch = 'arm64'
+#if machine.startswith('arm') or machine.startswith('aarch64'):
+#    arch = 'arm64'
+#arm build
+if machine.startswith('aarch64'):
+    arch = 'aarch64'
+if machine.startswith('armv7l'):
+    arch = 'armv7'
+#
+
 py_ver = '.'.join(map(str, python_major_minor_version()))
 QT_PREFIX = os.path.join(PREFIX, 'qt')
 FFMPEG_PREFIX = os.path.join(PREFIX, 'ffmpeg', 'lib')
@@ -294,15 +301,6 @@ def create_tarfile(env, compression_level='9'):
             raise
     os.mkdir(base)
     os.makedirs(base, exist_ok=True)  # when base is a mount point deleting it fails with EBUSY
-#arm build
-    archname = os.uname()
-    if "aarch64"  in archname:
-        arch = 'aarch64'
-    if "armv7l"  in archname:
-        arch = 'armv7'
-    if "x86_64"  in archname:
-        arch = 'x86_64'
-#
     #dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))
     dist = os.path.join(base, '%s-%s-%s.musl.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))
     with tarfile.open(dist, mode='w', format=tarfile.PAX_FORMAT) as tf:
